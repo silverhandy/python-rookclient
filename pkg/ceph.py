@@ -23,39 +23,6 @@ sys.path.append('../')
 import pkg.kube_api as api
 import pkg.rook as rook
 
-class ConfigDomain(enum.Enum):
-    glob = 0
-    client_adm = 1
-    mon = 2
-    osd = 3
-
-
-class CephConfigParser(object):
-    def __init__(self):
-        pass
-
-    def get_domain_title(self, domain):
-        title = ''
-        if domain == ConfigDomain.glob:
-            title = '[global]'
-        elif domain == ConfigDomain.client_adm:
-            title = '[client.admin]'
-        elif domain == ConfigDomain.mon:
-            title = '[mon]'
-        elif domain == ConfigDomain.osd:
-            title = '[osd]'
-        return title
-
-    def build_mon_host(self, domain, mons, namespace=None):
-        mon_config = self.get_domain_title(domain)
-        mon_config += '\n'
-        for key, value in mons.items():
-            #mon_config += key
-            #mon_config += "="
-            mon_config += value
-            mon_config += ","
-        return mon_config.strip(',')
-
 
 class RookCephApi(object):
     def __init__(self):
@@ -98,8 +65,15 @@ class RookCephApi(object):
             namespace=namespace)
         return output
 
+    def osd_pool_create(self, namespace=None):
+        output = self.ceph_op.execute_toolbox_cli('ceph osd pool create',
+            namespace=namespace)
+        return output
+
     def osd_create(self, namespace=None):
-        pass
+        output = self.ceph_op.execute_toolbox_cli('ceph osd create',
+            namespace=namespace)
+        return output
 
     def osd_pool_ls(self, namespace=None):
         output = self.ceph_op.execute_toolbox_cli('ceph osd pool ls',
@@ -120,12 +94,43 @@ class RookCephApi(object):
         return self.ceph_op.remove_dedicated_ceph_mon(self, mon_id,
             namespace=namespace)
 
+
+class ConfigDomain(enum.Enum):
+    glb = 0
+    clt_adm = 1
+    mon = 2
+    osd = 3
+
+class CephConfigOperator(object):
+    def __init__(self):
+        titles = {}
+
+    def initial_domain(self, domain):
+        titles[ConfigDomain.glb] =      '[global]'
+        titles[ConfigDomain.clt_adm] =  '[client.admin]'
+        titles[ConfigDomain.mon] =      '[mon]'
+        titles[ConfigDomain.osd] =      '[osd]'
+
+    def build_mon_host(self, mons, namespace=None):
+        mon_config = self.titles[ConfigDomain.mon]
+        mon_config += '\nmon host = '
+        for key in mons:
+            mon_config += key
+            mon_config += ','
+        mon_config.strip(',')
+        mon_config += '\nmon addr = '
+        for value in mons.itervalues():
+            mon_config += value
+            mon_config += ","
+        return mon_config.strip(',')
+
+
 class RookCephOperator(rook.RookOperator):
 
     def __init__(self):
         self.name = 'python-rookclient-ceph'
         self.kube_op = api.KubeOperator()
-        self.config_pa = CephConfigParser()
+        self.cfg_op = CephConfigOperator()
 
     def execute_toolbox_cli(self, cli, format='json', namespace=None):
         pod = self.kube_op.command_find_pod('rook-ceph-tools',
