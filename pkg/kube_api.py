@@ -124,6 +124,19 @@ class KubeOperator(object):
 
         return objects
 
+    def fetch_resource(self, namespace, resource, name, key):
+        objects = self.command_get(resource, name, namespace)
+        if not objects:
+            print("Fail to get resource %s." %name)
+            return None
+        
+        value = self.get_object_value(objects, key)
+        if value is None:
+            print("Fail to get resource object %s." %key)
+            return None
+
+        return value
+
     def override_resource(self, namespace, resource, name, key, value):
         """
         Implement the function to override pararmeters in ceph-cluster helm

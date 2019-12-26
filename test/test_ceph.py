@@ -63,10 +63,12 @@ class CephApiTester(object):
         self.ceph_op.add_dedicated_ceph_mon('k', '10.97.181.143:6789', 'rook-ceph')
 
     def test_remove_dedicated_ceph_mon(self):
-        self.ceph_op.remove_dedicated_ceph_mon('e', 'rook-ceph')
+        self.ceph_op.remove_dedicated_ceph_mon('c', 'rook-ceph')
 
     def test_ceph_api(self):
         status = self.api.ceph_status('rook-ceph')
+        print(status)
+        status = self.api.ceph_health('rook-ceph')
         print(status)
         status = self.api.osd_tree('rook-ceph')
         print(status)
@@ -88,3 +90,5 @@ if __name__ == "__main__":
     #tester.test_command_execute_cli()
 
     tester.test_ceph_api()
+
+    tester.test_remove_dedicated_ceph_mon()
