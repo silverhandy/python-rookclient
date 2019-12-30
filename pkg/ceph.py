@@ -51,8 +51,8 @@ class RookCephApi(object):
             namespace=namespace)
         return output
 
-    def osd_df(self, namespace=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd df',
+    def osd_df(self, output_method='tree', namespace=None):
+        output = self.ceph_op.execute_toolbox_cli('ceph osd df '+output_method,
             namespace=namespace)
         return output
 
@@ -95,6 +95,45 @@ class RookCephApi(object):
         return self.ceph_op.remove_dedicated_ceph_mon(self, mon_id,
             namespace=namespace)
 
+    def get_tiers_size(self, namespace=None):
+        output = self.osd_df(self, namespace=namespace)
+        search_tree = {}
+        for node in output['nodes']:
+            search_tree[node['id']] = node
+
+        # Extract the tiers as we will return a dict for the size of each tier
+        tiers = {k: v for k, v in search_tree.items() if v['type'] == 'root'}
+
+        # For each tier, traverse the heirarchy from the root->chassis->host.
+        # Sum the host sizes to determine the overall size of the tier
+        tier_sizes = {}
+        for tier in tiers.values():
+            tier_size = 0
+            for chassis_id in tier['children']:
+                chassis_size = 0
+                chassis = search_tree[chassis_id]
+                for host_id in chassis['children']:
+                    host = search_tree[host_id]
+                    if (chassis_size == 0 or
+                            chassis_size > host['kb']):
+                        chassis_size = host['kb']
+                tier_size += chassis_size / (1024**2)
+            tier_sizes[tier['name']] = tier_size
+
+        return tier_sizes
+
+    def osd_pool_get_quota(self, pool_name, namespace=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'ceph osd pool get-quota '+pool_name, namespace=namespace)
+        return output
+
+    def osd_pool_get(self, pool_name, var, namespace=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'ceph osd pool get-quota '+pool_name+' ' + var,
+            namespace=namespace)
+        if not output:
+            return None
+        return output[var]
 
 class ConfigDomain(enum.Enum):
     glb = 0
@@ -251,3 +290,4 @@ class RookCephOperator(rook.RookOperator):
         self.kube_op.command_delete('pod', pod, 'rook-ceph')
         '''
         return True
+

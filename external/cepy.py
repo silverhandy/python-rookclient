@@ -199,44 +199,119 @@ class CephOperator(object):
         except Exception as e:
             LOG.error("Exception in removing monitor: {}".format(e))
 
-    def get_ceph_primary_tier_size(self):
-        pass
-
     def get_ceph_tiers_size(self):
-        pass
+        try:
+            tiers_size = self._ceph_api.get_tiers_size(self._ceph_ns)
+            if tiers_size is None:
+                LOG.error("Get tiers size error")
+        except Exception as e:
+            LOG.error("Exception in getting tiers size: {}".format(e))
+        LOG.debug("Ceph cluster tiers (size in GB): %s" % str(tiers_size))
+        return tiers_size
+
+    def get_ceph_primary_tier_size(self):
+        primary_tier_name = constants.SB_TIER_DEFAULT_NAMES[
+            constants.SB_TIER_TYPE_CEPH] + constants.CEPH_CRUSH_TIER_SUFFIX
+
+        tiers_size = self.get_ceph_tiers_size()
+        primary_tier_size = tiers_size.get(primary_tier_name, 0)
+        LOG.debug("Ceph cluster primary tier size: %s GB" %
+            str(primary_tier_size))
+        return primary_tier_size
 
     def get_pools_df_stats(self):
-        pass
+        try:
+            ceph_df = self._ceph_api.ceph_df(self._ceph_ns)
+            if ceph_df is None:
+                LOG.error("Get ceph df error")
+        except Exception as e:
+            LOG.error("Exception in getting ceph df: {}".format(e))
+
+        return ceph_df["pools"]
 
     def get_cluster_df_stats(self, timeout=10):
-        pass
+        try:
+            ceph_df = self._ceph_api.ceph_df(self._ceph_ns)
+            if ceph_df is None:
+                LOG.error("Get ceph df error")
+        except Exception as e:
+            LOG.error("Exception in getting ceph df: {}".format(e))
+
+        return ceph_df["stats"]
 
     def delete_osd_pool(self, pool_name):
+        # set
         pass
 
     def list_osd_pools(self):
-        pass
+        try:
+            pool_ls = self._ceph_api.osd_pool_ls(self._ceph_ns)
+            if pool_ls is None:
+                LOG.error("List osd pools error")
+        except Exception as e:
+            LOG.error("Exception in listing osd pools: {}".format(e))
+
+        return pool_ls
 
     def osd_get_pool_quota(self, pool_name):
-        pass
+        try:
+            pool_quotas = self._ceph_api.osd_pool_get_quota(self._ceph_ns)
+            if not pool_quotas:
+                LOG.error("Get osd pool quota error")
+        except Exception as e:
+            LOG.error("Exception in getting osd pool quota: {}".format(e))
+        
+        return {"max_objects": pool_quotas["quota_max_objects"],
+                "max_bytes": pool_quotas["quota_max_bytes"]}
+
 
     def set_osd_pool_quota(self, pool, max_bytes=0, max_objects=0):
+        # set
         pass
 
     def mark_osd_down(self, osdid):
+        # set
         pass
 
     def osd_remove_crush_auth(self, osdid):
+        # set
         pass
 
     def osd_remove(self, *args, **kwargs):
+        # set
         pass
 
     def get_pools_config(self):
+
         pass
 
     def get_ceph_object_pool_name(self):
-        pass
+        try:
+            pg_num = self._ceph_api.osd_pool_get(
+                constants.CEPH_POOL_OBJECT_GATEWAY_NAME_JEWEL,
+                "pg_num", self._ceph_ns)
+            if pg_num is not None:
+                return constants.CEPH_POOL_OBJECT_GATEWAY_NAME_JEWEL
+        except Exception as e:
+            LOG.error("Exception in getting pool var pg_num: {}".format(e))
+
+        try:
+            pg_num = self._ceph_api.osd_pool_get(
+                constants.CEPH_POOL_OBJECT_GATEWAY_NAME_HAMMER,
+                "pg_num", self._ceph_ns)
+            if pg_num is not None:
+                return constants.CEPH_POOL_OBJECT_GATEWAY_NAME_HAMMER
+        except Exception as e:
+            LOG.error("Exception in getting pool var pg_num: {}".format(e))
+
+        return None
+
 
     def _get_fsid(self, timeout=10):
-        pass
+        try:
+            fsid = self._ceph_api.fsid(self._ceph_ns)
+        except Exception as e:
+            LOG.warn("ceph_api.fsid failed: " + str(e))
+            return None
+
+        return str(fsid.strip())
