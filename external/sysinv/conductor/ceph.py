@@ -18,8 +18,6 @@
 """ System Inventory Ceph Utilities and Helper functions. """
 
 
-from rookclient import ceph as rook_ceph
-
 import os
 import uuid
 import copy
@@ -27,7 +25,8 @@ import tsconfig.tsconfig as tsc
 from requests.exceptions import RequestException
 from requests.exceptions import ReadTimeout
 
-from cephclient import wrapper as ceph
+#from cephclient import wrapper as ceph
+from rookclient import ceph as rook_ceph
 from fm_api import fm_api
 from oslo_log import log as logging
 from sysinv._i18n import _
@@ -50,8 +49,9 @@ class CephOperator(object):
 
     def __init__(self, db_api):
         self._db_api = db_api
-        self._ceph_api = rook_ceph.RookCephApi()
-        self._ceph_ns = 'rook-ceph'
+        self._ceph_api = rook_ceph.RookCephApi(
+            constants.K8S_ROOK_CEPH_NAMESPACE_DEFAULT)
+        self._ceph_ns = 'kube-system'
         self._db_cluster = None
         self._db_primary_tier = None
         self._cluster_name = 'ceph_cluster'

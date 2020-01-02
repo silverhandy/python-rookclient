@@ -24,153 +24,6 @@ sys.path.append('../')
 import pkg.kube_api as api
 import pkg.rook as rook
 
-
-class RookCephApi(object):
-    def __init__(self):
-        self.ceph_op = RookCephOperator()
-
-    def ceph_status(self, namespace=None, timeout=None):
-        status = self.ceph_op.execute_toolbox_cli('ceph health',
-            namespace=namespace, timeout=timeout)
-        return status
-
-    def ceph_health(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph health',
-            namespace=namespace, timeout=timeout)
-        health = self.ceph_op.kube_op.get_object_value(output, 'status')
-        return health
-
-    def fsid(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph fsid',
-            namespace=namespace, timeout=timeout)
-        fsid = self.ceph_op.kube_op.get_object_value(output, 'fsid')
-        return fsid
-
-    def ceph_df(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph df', 
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_create(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd create',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_remove(self, ids, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd rm '+str(ids),
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_down(self, ids, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd down '+str(ids),
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_df(self, output_method='tree', namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd df '+output_method,
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_stat(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd stat',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_tree(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd tree',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_pool_create(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd pool create',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_pool_delete(self, pool, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph osd pool delete ' + pool + ' ' + pool,
-            sure=True, namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_pool_ls(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd pool ls',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_crush_dump(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd crush dump',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_crush_remove(self, osdid_str, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph osd crush rm ' + osdid_str,
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_crush_rule_dump(self, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('ceph osd crush rule dump',
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def mon_remove(self, mon_id, namespace=None, timeout=None):
-        return self.ceph_op.remove_dedicated_ceph_mon(self, mon_id,
-            namespace=namespace)
-
-    def get_tiers_size(self, namespace=None, timeout=None):
-        output = self.osd_df(self, timeout=timeout, namespace=namespace)
-        search_tree = {}
-        for node in output['nodes']:
-            search_tree[node['id']] = node
-
-        # Extract the tiers as we will return a dict for the size of each tier
-        tiers = {k: v for k, v in search_tree.items() if v['type'] == 'root'}
-
-        # For each tier, traverse the heirarchy from the root->chassis->host.
-        # Sum the host sizes to determine the overall size of the tier
-        tier_sizes = {}
-        for tier in tiers.values():
-            tier_size = 0
-            for chassis_id in tier['children']:
-                chassis_size = 0
-                chassis = search_tree[chassis_id]
-                for host_id in chassis['children']:
-                    host = search_tree[host_id]
-                    if (chassis_size == 0 or
-                            chassis_size > host['kb']):
-                        chassis_size = host['kb']
-                tier_size += chassis_size / (1024**2)
-            tier_sizes[tier['name']] = tier_size
-
-        return tier_sizes
-
-    def osd_pool_get_quota(self, pool, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph osd pool get-quota '+pool,
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_pool_set_quota(self, pool, field, val, namespace=None,
-        timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph osd pool set-quota '+pool+' '+field+' '+val,
-            namespace=namespace, timeout=timeout)
-        return output
-
-    def osd_pool_get(self, pool, var, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph osd pool get '+pool+' ' + var,
-            namespace=namespace, timeout=timeout)
-        if not output:
-            return None
-        return output[var]
-
-    def auth_del(self, osdid_str, namespace=None, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'ceph auth del '+osdid_str,
-            namespace=namespace, timeout=timeout)
-        return output
-
 class ConfigDomain(enum.Enum):
     glb = 0
     clt_adm = 1
@@ -187,7 +40,7 @@ class CephConfigOperator(object):
         titles[ConfigDomain.mon] =      '[mon]'
         titles[ConfigDomain.osd] =      '[osd]'
 
-    def build_mon_host(self, mons, namespace=None):
+    def build_mon_host(self, mons):
         mon_config = self.titles[ConfigDomain.mon]
         mon_config += '\nmon host = '
         for key in mons:
@@ -218,36 +71,34 @@ class CephConfigOperator(object):
 
 class RookCephOperator(rook.RookOperator):
 
-    def __init__(self):
+    def __init__(self, namespace):
         self.name = 'python-rookclient-ceph'
-        self.kube_op = api.KubeOperator()
+        self.kube_op = api.KubeOperator(namespace)
         self.cfg_op = CephConfigOperator()
 
-    def execute_toolbox_cli(self, cli, sure=False, format='json',
-        namespace=None, timeout=None):
-        pod = self.kube_op.command_find_pod('rook-ceph-tools',
-            namespace='rook-ceph')
+    def execute_toolbox_cli(self, cli, sure=False, format='json', timeout=None):
+        pod = self.kube_op.command_find_pod('rook-ceph-tools')
         if not pod:
             print("Error when get pod rook-ceph-tools.")
             return None
 
-        full_cli = cli
+        full_cli = 'ceph '
+        full_cli += cli
         if sure:
             full_cli += ' --yes-i-really-really-mean-it'
         if format == 'json':
             full_cli += ' --format json-pretty'
 
-        output = self.kube_op.command_execute_cli(pod, full_cli, namespace, timeout)
+        output = self.kube_op.command_execute_cli(pod, full_cli, timeout)
         return output
 
-    def get_rook_mon_count(self, namespace=None):
-        objects = self.kube_op.command_get('CephCluster', 'rook-ceph',
-            namespace)
+    def get_rook_mon_count(self):
+        objects = self.kube_op.command_get('CephCluster', 'rook-ceph')
         return self.kube_op.get_object_value(objects, 'spec.mon.count')
 
-    def get_rook_mon_list(self, namespace=None):
+    def get_rook_mon_list(self):
         objects = self.kube_op.command_get('configmap',
-            'rook-ceph-mon-endpoints', namespace)
+            'rook-ceph-mon-endpoints')
         mon_data = self.kube_op.get_object_value(objects, 'data.data')
         mon_list = []
         mon_dict = {}
@@ -261,13 +112,12 @@ class RookCephOperator(rook.RookOperator):
         #print(mon_dict)
         return mon_dict
 
-    def modify_rook_mon_count(self, count, namespace=None, timeout=None):
+    def modify_rook_mon_count(self, count, timeout=None):
         self.kube_op.override_resource('CephCluster', 'rook-ceph',
-            'spec.mon.count', count, namespace, timeout=timeout)
+            'spec.mon.count', count, timeout=timeout)
 
-    def add_dedicated_ceph_mon(self, mon_id, endpoint, namespace=None,
-        timeout=None):
-        mons = self.get_rook_mon_list(namespace)
+    def add_dedicated_ceph_mon(self, mon_id, endpoint, timeout=None):
+        mons = self.get_rook_mon_list()
         if mon_id in mons.keys() == True:
             print("Error when add dedicated mon: mon_id:%s existed." %mon_id)
             return
@@ -284,15 +134,15 @@ class RookCephOperator(rook.RookOperator):
             'rook-config-override', 'data.config', mons_hosts)
         '''
 
-        mon_count = self.get_rook_mon_count(namespace)
+        mon_count = self.get_rook_mon_count()
         if mon_count >= 1 and mon_count < 3:
             mon_count += 1
-            self.modify_rook_mon_count(mon_count, namespace, timeout)
+            self.modify_rook_mon_count(mon_count, timeout)
 
 
-    def remove_dedicated_ceph_mon(self, mon_id, namespace=None, timeout=None):
+    def remove_dedicated_ceph_mon(self, mon_id, timeout=None):
         # remove the ceph monitor with id
-        mons = self.get_rook_mon_list(namespace)
+        mons = self.get_rook_mon_list()
         if mon_id not in mons:
             print("Error when remove dedicated mon: mon_id:%s cannot find." %mon_id)
             return False
@@ -301,21 +151,21 @@ class RookCephOperator(rook.RookOperator):
 
         mons_hosts = self.cfg_op.build_configmap_mon_endpoints_data(mons)
         self.kube_op.override_resource('configmap', 'rook-ceph-mon-endpoints',
-            'data.data', mons_hosts, namespace)
+            'data.data', mons_hosts)
         
         mon_mapping = self.kube_op.fetch_resource('configmap',
-            'rook-ceph-mon-endpoints', 'data.mapping', namespace)
+            'rook-ceph-mon-endpoints', 'data.mapping')
         mon_dict = json.loads(mon_mapping)
         mon_dict = self.cfg_op.build_configmap_mon_endpoints_mapping(mons,
             mon_dict)
         mon_mapping = json.dumps(mon_dict)
         self.kube_op.override_resource('configmap', 'rook-ceph-mon-endpoints',
-            'data.mapping', mon_mapping, namespace)
+            'data.mapping', mon_mapping)
 
-        mon_count = self.get_rook_mon_count(namespace)
+        mon_count = self.get_rook_mon_count()
         if mon_count > 1 and mon_count <= 3:
             mon_count -= 1
-            self.modify_rook_mon_count(mon_count, namespace, timeout)
+            self.modify_rook_mon_count(mon_count, timeout)
         '''
         self.execute_toolbox_cli('ceph mon rm %s'%mon_id, namespace=namespace)
 

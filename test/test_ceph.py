@@ -24,55 +24,53 @@ import pkg.ceph as ceph
 class CephApiTester(object):
 
     def __init__(self):
-        self.kube_op = api.KubeOperator()
-        self.ceph_op = ceph.RookCephOperator()
-        self.api = ceph.RookCephApi()
+        self.kube_op = api.KubeOperator('rook-ceph')
+        self.ceph_op = ceph.RookCephOperator('rook-ceph')
+        self.api = ceph.RookCephApi('rook-ceph')
 
     def test_command_get(self):
         #objects = self.op.command_get('CephCluster', 'rook-ceph', 'rook-ceph')
-        objects = self.kube_op.command_get('configmap', 'rook-config-override',
-            'rook-ceph')
+        objects = self.kube_op.command_get('configmap', 'rook-config-override')
         print("Object Print List:\n--------------------")
         print(objects)
         print("-------------------")
     
     def test_command_find_pod(self):
-        pod = self.kube_op.command_find_pod('rook-ceph-tools', namespace='rook-ceph')
+        pod = self.kube_op.command_find_pod('rook-ceph-tools')
         print("Pod Name: " + pod)
-        pod = self.kube_op.command_find_pod('rook-ceph-mon', 'ceph_daemon_id', 'a',
-            'rook-ceph')
+        pod = self.kube_op.command_find_pod('rook-ceph-mon', 'ceph_daemon_id', 'a')
         print("Pod Name: " + pod)
 
     def test_command_execute_cli(self):
-        pod = self.kube_op.command_find_pod('rook-ceph-tools', namespace='rook-ceph')
-        output = self.kube_op.command_execute_cli(pod, 'ceph -s --format json-pretty', 'rook-ceph')
+        pod = self.kube_op.command_find_pod('rook-ceph-tools')
+        output = self.kube_op.command_execute_cli(pod, 'ceph -s --format json-pretty')
         print(output)
 
     def test_get_rook_mon_count(self):
-        count = self.ceph_op.get_rook_mon_count('rook-ceph')
+        count = self.ceph_op.get_rook_mon_count()
         print("Ceph monitor count: " + str(count))
 
     def test_get_rook_mon_list(self):
-        mon_list = self.ceph_op.get_rook_mon_list('rook-ceph')
+        mon_list = self.ceph_op.get_rook_mon_list()
         print(mon_list)
 
     def test_modify_rook_mon_count(self, count):
-        self.ceph_op.modify_rook_mon_count(count, 'rook-ceph')
+        self.ceph_op.modify_rook_mon_count(count)
 
     def test_add_dedicated_ceph_mon(self):
-        self.ceph_op.add_dedicated_ceph_mon('k', '10.97.181.143:6789', 'rook-ceph')
+        self.ceph_op.add_dedicated_ceph_mon('k', '10.97.181.143:6789')
 
     def test_remove_dedicated_ceph_mon(self):
-        self.ceph_op.remove_dedicated_ceph_mon('d', 'rook-ceph')
+        self.ceph_op.remove_dedicated_ceph_mon('d')
 
     def test_ceph_api(self):
-        status = self.api.ceph_status('rook-ceph')
+        status = self.api.ceph_status()
         print(status)
-        status = self.api.ceph_health('rook-ceph')
+        status = self.api.ceph_health()
         print(status)
-        status = self.api.osd_tree('rook-ceph')
+        status = self.api.osd_tree()
         print(status)
-        status = self.api.osd_crush_dump('rook-ceph')
+        status = self.api.osd_crush_dump()
         print(status)
 
 if __name__ == "__main__":
