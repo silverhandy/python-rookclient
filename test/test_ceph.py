@@ -63,7 +63,7 @@ class CephApiTester(object):
         self.ceph_op.add_dedicated_ceph_mon('k', '10.97.181.143:6789', 'rook-ceph')
 
     def test_remove_dedicated_ceph_mon(self):
-        self.ceph_op.remove_dedicated_ceph_mon('c', 'rook-ceph')
+        self.ceph_op.remove_dedicated_ceph_mon('d', 'rook-ceph')
 
     def test_ceph_api(self):
         status = self.api.ceph_status('rook-ceph')

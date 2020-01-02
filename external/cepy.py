@@ -110,7 +110,7 @@ class CephOperator(object):
         rc = True
 
         try:
-            ceph_health = self._ceph_api.ceph_health(self._ceph_ns)
+            ceph_health = self._ceph_api.ceph_health(namespace=self._ceph_ns)
             if ceph_health != constants.CEPH_HEALTH_OK:
                 rc = False
         except Exception as e:
@@ -194,14 +194,14 @@ class CephOperator(object):
 
     def remove_ceph_monitor(self, hostname, timeout=None):
         try:
-            if self._ceph_api.mon_remove(hostname, self._ceph_ns):
+            if self._ceph_api.mon_remove(hostname, self._ceph_ns, timeout):
                 LOG.error("Remove monitor error")
         except Exception as e:
             LOG.error("Exception in removing monitor: {}".format(e))
 
     def get_ceph_tiers_size(self):
         try:
-            tiers_size = self._ceph_api.get_tiers_size(self._ceph_ns)
+            tiers_size = self._ceph_api.get_tiers_size(namespace=self._ceph_ns)
             if tiers_size is None:
                 LOG.error("Get tiers size error")
         except Exception as e:
@@ -221,7 +221,7 @@ class CephOperator(object):
 
     def get_pools_df_stats(self):
         try:
-            ceph_df = self._ceph_api.ceph_df(self._ceph_ns)
+            ceph_df = self._ceph_api.ceph_df(namespace=self._ceph_ns)
             if ceph_df is None:
                 LOG.error("Get ceph df error")
         except Exception as e:
@@ -231,7 +231,7 @@ class CephOperator(object):
 
     def get_cluster_df_stats(self, timeout=10):
         try:
-            ceph_df = self._ceph_api.ceph_df(self._ceph_ns)
+            ceph_df = self._ceph_api.ceph_df(self._ceph_ns, timeout)
             if ceph_df is None:
                 LOG.error("Get ceph df error")
         except Exception as e:
@@ -239,13 +239,15 @@ class CephOperator(object):
 
         return ceph_df["stats"]
 
-    def delete_osd_pool(self, pool_name):
-        # set
-        pass
+    def delete_osd_pool(self, pool):
+        try:
+            self._ceph_api.osd_pool_delete(pool, namespace=self._ceph_ns)
+        except Exception as e:
+            LOG.error("Exception in deleting osd pool: {}".format(e))
 
     def list_osd_pools(self):
         try:
-            pool_ls = self._ceph_api.osd_pool_ls(self._ceph_ns)
+            pool_ls = self._ceph_api.osd_pool_ls(namespace=self._ceph_ns)
             if pool_ls is None:
                 LOG.error("List osd pools error")
         except Exception as e:
@@ -253,9 +255,10 @@ class CephOperator(object):
 
         return pool_ls
 
-    def osd_get_pool_quota(self, pool_name):
+    def osd_get_pool_quota(self, pool):
         try:
-            pool_quotas = self._ceph_api.osd_pool_get_quota(self._ceph_ns)
+            pool_quotas = self._ceph_api.osd_pool_get_quota(pool,
+                namespace=self._ceph_ns)
             if not pool_quotas:
                 LOG.error("Get osd pool quota error")
         except Exception as e:
@@ -266,24 +269,136 @@ class CephOperator(object):
 
 
     def set_osd_pool_quota(self, pool, max_bytes=0, max_objects=0):
-        # set
-        pass
+        """Set the quota for an OSD pool
+        Setting max_bytes or max_objects to 0 will disable that quota param
+        :param pool:         OSD pool
+        :param max_bytes:    maximum bytes for OSD pool
+        :param max_objects:  maximum objects for OSD pool
+        """
+        prev_quota = self.osd_get_pool_quota(pool)
+        if prev_quota["max_bytes"] != max_bytes:
+            self._ceph_api.osd_pool_set_quota(pool, 'max_bytes', max_bytes,
+                namespace=self._ceph_ns)
+            LOG.info(_("Set OSD pool quota: "
+                       "pool={}, max_bytes={}").format(pool, max_bytes))
+        if prev_quota["max_objects"] != max_objects:
+            self._ceph_api.osd_pool_set_quota(pool, 'max_objects', max_objects,
+                namespace=self._ceph_ns)
+            LOG.info(_("Set OSD pool quota: "
+                       "pool={}, max_objects={}").format(pool, max_objects))
+
+
+    def get_osd_tree(self):
+        try:
+            osd_tree = self._ceph_api.osd_tree(namespace=self._ceph_ns)
+            if osd_tree is None:
+                LOG.error("Get ceph df error")
+                return None, None
+        except Exception as e:
+            LOG.error("Exception in getting ceph df: {}".format(e))
+
+        return osd_tree['nodes'], osd_tree['stray']
+
+    def set_osd_down(self, osdid):
+        try:
+            self._ceph_api.osd_down(osdid, namespace=self._ceph_ns)
+        except Exception as e:
+            LOG.error("Exception in setting osd down: {}".format(e))
+        LOG.info("Set OSD %d to down state.", osdid)
 
     def mark_osd_down(self, osdid):
         # set
-        pass
+        to_mark_osd_down = False
+        nodes, stray = self.get_osd_tree()
+        if nodes and stray:
+            osdid_str = "osd." + str(osdid)
+            for entry in nodes + stray:
+                if entry['name'] == osdid_str:
+                    if entry['status'] == 'up':
+                        LOG.info("OSD %s is still up. Mark it down.", osdid_str)
+                        to_mark_osd_down = True
+                    break
+
+        if to_mark_osd_down:
+            self.set_osd_down(osdid)
 
     def osd_remove_crush_auth(self, osdid):
         # set
-        pass
+        osdid_str = "osd." + str(osdid)
+        try:
+            self._ceph_api.osd_crush_remove(osdid_str, namespace=self._ceph_ns)
+        except Exception as e:
+            LOG.error("Exception in osd cursh remove: {}".format(e))
+        LOG.info("Remove OSD %d CRUSH.", osdid)
+
+        try:
+            self._ceph_api.auth_del(osdid_str, namespace=self._ceph_ns)
+        except Exception as e:
+            LOG.error("Exception in deleting auth osd: {}".format(e))
+        LOG.info("Delete OSD %d Auth.", osdid)
 
     def osd_remove(self, *args, **kwargs):
         # set
         pass
 
-    def get_pools_config(self):
 
-        pass
+    def get_pools_values(self):
+        """Create or resize all of the osd pools as needed
+        """
+        default_quota_map = {'cinder': constants.CEPH_POOL_VOLUMES_QUOTA_GIB,
+                             'glance': constants.CEPH_POOL_IMAGES_QUOTA_GIB,
+                             'ephemeral': constants.CEPH_POOL_EPHEMERAL_QUOTA_GIB,
+                             'object': constants.CEPH_POOL_OBJECT_GATEWAY_QUOTA_GIB,
+                             'kube': constants.CEPH_POOL_KUBE_QUOTA_GIB}
+
+        storage_ceph = StorageBackendConfig.get_configured_backend_conf(
+            self._db_api,
+            constants.CINDER_BACKEND_CEPH
+        )
+
+        quotas = []
+        for p in ['cinder', 'glance', 'ephemeral', 'object', 'kube']:
+            quota_attr = p + '_pool_gib'
+            quota_val = getattr(storage_ceph, quota_attr)
+
+            if quota_val is None:
+                quota_val = default_quota_map[p]
+                self._db_api.storage_ceph_update(storage_ceph.uuid,
+                                                 {quota_attr: quota_val})
+
+            quotas.append(quota_val)
+
+        LOG.debug("Pool Quotas: %s" % quotas)
+        return tuple(quotas)
+
+    def set_quota_gib(self, pool_name):
+        quota_gib_value = None
+        cinder_pool_gib, glance_pool_gib, ephemeral_pool_gib, \
+            object_pool_gib, kube_pool_gib = self.get_pools_values()
+
+        if pool_name.find(constants.CEPH_POOL_VOLUMES_NAME) != -1:
+            quota_gib_value = cinder_pool_gib
+        elif pool_name.find(constants.CEPH_POOL_KUBE_NAME) != -1:
+            quota_gib_value = kube_pool_gib
+        elif pool_name.find(constants.CEPH_POOL_IMAGES_NAME) != -1:
+            quota_gib_value = glance_pool_gib
+        elif pool_name.find(constants.CEPH_POOL_EPHEMERAL_NAME) != -1:
+            quota_gib_value = ephemeral_pool_gib
+        elif pool_name.find(constants.CEPH_POOL_OBJECT_GATEWAY_NAME_JEWEL) != -1 or \
+                 pool_name.find(constants.CEPH_POOL_OBJECT_GATEWAY_NAME_HAMMER) != -1:
+            quota_gib_value = object_pool_gib
+        else:
+            quota_gib_value = 0
+
+        return quota_gib_value
+
+    def get_pools_config(self):
+        for pool in CEPH_POOLS:
+            # Here it is okay for object pool name is either
+            # constants.CEPH_POOL_OBJECT_GATEWAY_NAME_JEWEL or
+            # constants.CEPH_POOL_OBJECT_GATEWAY_NAME_HAMMER
+            pool['quota_gib'] = self.set_quota_gib(pool['pool_name'])
+        return CEPH_POOLS
 
     def get_ceph_object_pool_name(self):
         try:
@@ -309,7 +424,7 @@ class CephOperator(object):
 
     def _get_fsid(self, timeout=10):
         try:
-            fsid = self._ceph_api.fsid(self._ceph_ns)
+            fsid = self._ceph_api.fsid(timeout, self._ceph_ns, timeout)
         except Exception as e:
             LOG.warn("ceph_api.fsid failed: " + str(e))
             return None

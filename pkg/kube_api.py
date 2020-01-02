@@ -52,31 +52,32 @@ class KubeOperator(object):
             command += ['-f', '-']
         return command
 
-    def execute_kubectl_command(self, command, definition):
+    def execute_kubectl_command(self, command, definition, timeout=None):
         execute_process = subprocess.Popen(command, stdin=subprocess.PIPE,
             stderr=subprocess.PIPE)
         stdout, stderr = execute_process.communicate(yaml.dump(definition).encode())
         execute_process.stdin.close()
-        if execute_process.wait() != 0:
+        if execute_process.wait(timeout) != 0:
             raise ApiError(stderr)
 
-    def execute_kubectl_command_with_return(self, command):
+    def execute_kubectl_command_with_output(self, command, timeout=None):
         execute_process = subprocess.Popen(command, stdout=subprocess.PIPE,
             stderr=sys.stderr)
         objects = yaml.safe_load(execute_process.stdout)
-        if execute_process.wait() != 0:
+        if execute_process.wait(timeout) != 0:
             raise ApiError
         return objects
 
     #@tenacity.retry(reraise=True, 
     #                retry=tenacity.retry_if_exception_type(ApiError),
     #                stop=tenacity.stop_after_attempt(3))
-    def command_get(self, resource, name=None, namespace=None):
+    def command_get(self, resource, name=None, namespace=None, timeout=None):
         command = self.build_kuebctl_command('get', namespace=namespace,
             resource=resource, name=name, flags=['-o', 'yaml'])
-        return self.execute_kubectl_command_with_return(command)
+        return self.execute_kubectl_command_with_output(command, timeout)
 
-    def command_find_pod(self, app, id_key=None, id_value=None, namespace=None):
+    def command_find_pod(self, app, id_key=None, id_value=None, namespace=None,
+        timeout=None):
         if id_key and id_value:
             flags = ['-l', 'app=%s,%s=%s'%(app, id_key, id_value)]
         else:
@@ -85,25 +86,25 @@ class KubeOperator(object):
             resource = 'pod',
             flags = flags + ['-o', r'jsonpath="{.items[0].metadata.name}"'])
         #print("Get pod command: %s" %command)
-        return self.execute_kubectl_command_with_return(command)
+        return self.execute_kubectl_command_with_output(command, timeout)
 
-    def command_replace(self, definition, namespace=None):
+    def command_replace(self, definition, namespace=None, timeout=None):
         command = self.build_kuebctl_command('replace', namespace=namespace,
             flags=['--cascade'], with_definition=True)
             #flags=['--force', '--cascade'], with_definition=True)
-        self.execute_kubectl_command(command, definition)
+        self.execute_kubectl_command(command, definition, timeout)
 
-    def command_execute_cli(self, pod, cli, namespace=None):
+    def command_execute_cli(self, pod, cli, namespace=None, timeout=None):
         command = self.build_kuebctl_command('exec', namespace=namespace,
             name=pod, flags=['-ti', '--', 'bash', '-c', '%s'%cli])
         #print("Exec cli command: %s" %command)
-        return self.execute_kubectl_command_with_return(command)
+        return self.execute_kubectl_command_with_output(command, timeout)
 
-    def command_delete(self, resource, name, namespace=None):
+    def command_delete(self, resource, name, namespace=None, timeout=None):
         command = self.build_kuebctl_command('delete', namespace=namespace,
             resource=resource, name=name)
             #flags=['--force', '--cascade'], with_definition=True)
-        subprocess.check_call(command)
+        subprocess.check_call(command, timeout=timeout)
 
     def get_object_value(self, objects, key):
         path = key.split('.')
@@ -124,8 +125,8 @@ class KubeOperator(object):
 
         return objects
 
-    def fetch_resource(self, namespace, resource, name, key):
-        objects = self.command_get(resource, name, namespace)
+    def fetch_resource(self, resource, name, key, namespace=None, timeout=None):
+        objects = self.command_get(resource, name, namespace, timeout)
         if not objects:
             print("Fail to get resource %s." %name)
             return None
@@ -137,12 +138,13 @@ class KubeOperator(object):
 
         return value
 
-    def override_resource(self, namespace, resource, name, key, value):
+    def override_resource(self, resource, name, key, value, namespace=None,
+        timeout=None):
         """
         Implement the function to override pararmeters in ceph-cluster helm
         chart.
         """
-        objects = self.command_get(resource, name, namespace)
+        objects = self.command_get(resource, name, namespace, timeout)
         if not objects:
             print("Fail to get resource %s." %name)
             return
@@ -155,4 +157,4 @@ class KubeOperator(object):
         #print("New Object before replace ............\n")
         #print(new_objects)
 
-        self.command_replace(new_objects, namespace)
+        self.command_replace(new_objects, namespace, timeout)
