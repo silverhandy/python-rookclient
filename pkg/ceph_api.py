@@ -28,10 +28,22 @@ class RookCephApi(object):
     def __init__(self, namespace):
         self.ceph_op = ceph.RookCephOperator(namespace)
 
+    '''
+    Get Interfaces, all the get interface can be implemented by toolbox CLI.
+    '''
+
     def status(self, timeout=None):
         status = self.ceph_op.execute_toolbox_cli('status',
             timeout=timeout)
         return status
+
+    def health(self, detail=None, timeout=None):
+        cli = 'health'
+        if detail:
+            cli += ' detail'
+        health = self.ceph_op.execute_toolbox_cli(cli,
+            timeout=timeout)
+        return health
 
     def ceph_status(self, timeout=None):
         status = self.ceph_op.execute_toolbox_cli('health',
@@ -55,21 +67,6 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
-    def osd_create(self, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('osd create',
-            timeout=timeout)
-        return output
-
-    def osd_remove(self, ids, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('osd rm '+str(ids),
-            timeout=timeout)
-        return output
-
-    def osd_down(self, ids, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('osd down '+str(ids),
-            timeout=timeout)
-        return output
-
     def osd_df(self, output_method='tree', timeout=None):
         output = self.ceph_op.execute_toolbox_cli('osd df '+output_method,
             timeout=timeout)
@@ -85,17 +82,6 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
-    def osd_pool_create(self, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('osd pool create',
-            timeout=timeout)
-        return output
-
-    def osd_pool_delete(self, pool, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd pool delete ' + pool + ' ' + pool,
-            sure=True, timeout=timeout)
-        return output
-
     def osd_pool_ls(self, timeout=None):
         output = self.ceph_op.execute_toolbox_cli('osd pool ls',
             timeout=timeout)
@@ -106,20 +92,11 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
-    def osd_crush_remove(self, osdid_str, timeout=None):
+    def osd_crush_rule_dump(self, rule_name, timeout=None):
         output = self.ceph_op.execute_toolbox_cli(
-            'osd crush rm ' + osdid_str,
+            'osd crush rule dump '+rule_name,
             timeout=timeout)
         return output
-
-    def osd_crush_rule_dump(self, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli('osd crush rule dump',
-            timeout=timeout)
-        return output
-
-    def mon_remove(self, mon_id, timeout=None):
-        return self.ceph_op.remove_dedicated_ceph_mon(self, mon_id,
-            timeout=timeout)
 
     def get_tiers_size(self, timeout=None):
         output = self.osd_df(self, timeout=timeout)
@@ -154,12 +131,6 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
-    def osd_pool_set_quota(self, pool, field, val, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd pool set-quota '+pool+' '+field+' '+val,
-            timeout=timeout)
-        return output
-
     def osd_pool_get(self, pool, var, timeout=None):
         output = self.ceph_op.execute_toolbox_cli(
             'osd pool get '+pool+' ' + var,
@@ -168,51 +139,15 @@ class RookCephApi(object):
             return None
         return output[var]
 
-    def auth_del(self, osdid_str, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'auth del '+osdid_str,
-            timeout=timeout)
-        return output
-
-    def osd_crush_rule_rm(self, name, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd crush rule rm '+name,
-            timeout=timeout)
-        return output
-
     def osd_crush_rule_ls(self, timeout=None):
         output = self.ceph_op.execute_toolbox_cli(
             'osd crush rule ls',
             timeout=timeout)
         return output
 
-    def osd_crush_add_bucket(self, name, _type, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd crush add-bucket '+name+' '+_type,
-            timeout=timeout)
-        return output
-
-    def osd_crush_move(self, name, args, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd crush move '+name+' '+args,
-            timeout=timeout)
-        return output
-
     def osd_crush_tree(self, timeout=None):
         output = self.ceph_op.execute_toolbox_cli(
             'osd crush tree',
-            timeout=timeout)
-        return output
-
-    def osd_crush_rename_bucket(self, srcname, dstname, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd crush rename-bucket '+srcname+' '+dstname,
-            timeout=timeout)
-        return output
-
-    def osd_crush_rule_rename(self, srcname, dstname, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            'osd crush rule rename '+srcname+' '+dstname,
             timeout=timeout)
         return output
 
@@ -228,3 +163,105 @@ class RookCephApi(object):
             'pg dump_stuck',
             timeout=timeout)
         return output
+
+    '''
+    Set Interfaces
+    '''
+
+    # CRD/configmap override
+    def mon_remove(self, mon_id, timeout=None):
+        return self.ceph_op.remove_dedicated_ceph_mon(mon_id, timeout)
+
+    # ?
+    def osd_create(self, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli('osd create',
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI ?
+    # ceph osd out <ID>
+    # ceph osd crush remove osd.<ID>
+    # ceph auth del osd.<ID>
+    # ceph osd rm <ID>
+    def osd_remove(self, ids, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli('osd rm '+str(ids),
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI but pod error
+    def osd_down(self, ids, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli('osd down '+str(ids),
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_pool_create(self, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli('osd pool create',
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_pool_delete(self, pool, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd pool delete ' + pool + ' ' + pool,
+            sure=True, timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_pool_set_quota(self, pool, field, val, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd pool set-quota '+pool+' '+field+' '+val,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def auth_del(self, osdid_str, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'auth del '+osdid_str,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_crush_remove(self, osdid_str, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush rm ' + osdid_str,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    # ceph osd crush move osd.1 host=controller-0
+    def osd_crush_move(self, name, args, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush move '+name+' '+args,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    # ceph osd crush rule create-replicated replicated_rule default host
+    def osd_crush_rule_rm(self, name, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush rule rm '+name,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_crush_rule_rename(self, srcname, dstname, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush rule rename '+srcname+' '+dstname,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_crush_add_bucket(self, name, _type, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush add-bucket '+name+' '+_type,
+            timeout=timeout)
+        return output
+
+    # Toolbox CLI
+    def osd_crush_rename_bucket(self, srcname, dstname, timeout=None):
+        output = self.ceph_op.execute_toolbox_cli(
+            'osd crush rename-bucket '+srcname+' '+dstname,
+            timeout=timeout)
+        return output
+

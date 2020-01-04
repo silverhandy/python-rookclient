@@ -24,6 +24,13 @@ sys.path.append('../')
 import pkg.kube_api as api
 import pkg.rook as rook
 
+CRD_CEPH_CLUSTER = "CephCluster"
+
+CONFIGMAP_MON_ENDPOINTS = "rook-ceph-mon-endpoints"
+CONFIGMAP_CONFIG_OVERRIDE = "rook-config-override"
+
+POD_TOOLBOX = "rook-ceph-tools"
+
 class ConfigDomain(enum.Enum):
     glb = 0
     clt_adm = 1
@@ -77,7 +84,7 @@ class RookCephOperator(rook.RookOperator):
         self.cfg_op = CephConfigOperator()
 
     def execute_toolbox_cli(self, cli, sure=False, format='json', timeout=None):
-        pod = self.kube_op.command_find_pod('rook-ceph-tools')
+        pod = self.kube_op.command_find_pod(POD_TOOLBOX)
         if not pod:
             print("Error when get pod rook-ceph-tools.")
             return None
@@ -93,12 +100,16 @@ class RookCephOperator(rook.RookOperator):
         return output
 
     def get_rook_mon_count(self):
-        objects = self.kube_op.command_get('CephCluster', 'rook-ceph')
+        cluster_crd = self.kube_op.command_find_resource(CRD_CEPH_CLUSTER)
+        if not cluster_crd:
+            print("Error when find resource: %s." % CRD_CEPH_CLUSTER)
+            return 0
+
+        objects = self.kube_op.command_get(CRD_CEPH_CLUSTER, cluster_crd)
         return self.kube_op.get_object_value(objects, 'spec.mon.count')
 
     def get_rook_mon_list(self):
-        objects = self.kube_op.command_get('configmap',
-            'rook-ceph-mon-endpoints')
+        objects = self.kube_op.command_get('configmap', CONFIGMAP_MON_ENDPOINTS)
         mon_data = self.kube_op.get_object_value(objects, 'data.data')
         mon_list = []
         mon_dict = {}
@@ -109,11 +120,15 @@ class RookCephOperator(rook.RookOperator):
         for item in mon_data.split(','):
             mon_list = item.split('=')
             mon_dict[mon_list[0]] = mon_list[1]
-        #print(mon_dict)
+        print(mon_dict)
         return mon_dict
 
     def modify_rook_mon_count(self, count, timeout=None):
-        self.kube_op.override_resource('CephCluster', 'rook-ceph',
+        cluster_crd = self.kube_op.command_find_resource(CRD_CEPH_CLUSTER)
+        if not cluster_crd:
+            print("Error when find resource: %s." % CRD_CEPH_CLUSTER)
+            return
+        self.kube_op.override_resource_object(CRD_CEPH_CLUSTER, cluster_crd,
             'spec.mon.count', count, timeout=timeout)
 
     def add_dedicated_ceph_mon(self, mon_id, endpoint, timeout=None):
@@ -144,23 +159,24 @@ class RookCephOperator(rook.RookOperator):
         # remove the ceph monitor with id
         mons = self.get_rook_mon_list()
         if mon_id not in mons:
-            print("Error when remove dedicated mon: mon_id:%s cannot find." %mon_id)
+            print("Error when remove dedicated mon: mon_id: %s cannot find." %
+                mon_id)
             return False
         
         mons.pop(mon_id)
 
         mons_hosts = self.cfg_op.build_configmap_mon_endpoints_data(mons)
-        self.kube_op.override_resource('configmap', 'rook-ceph-mon-endpoints',
-            'data.data', mons_hosts)
+        self.kube_op.override_resource_object('configmap',
+            CONFIGMAP_MON_ENDPOINTS, 'data.data', mons_hosts)
         
-        mon_mapping = self.kube_op.fetch_resource('configmap',
-            'rook-ceph-mon-endpoints', 'data.mapping')
+        mon_mapping = self.kube_op.fetch_resource_object('configmap',
+            CONFIGMAP_MON_ENDPOINTS, 'data.mapping')
         mon_dict = json.loads(mon_mapping)
         mon_dict = self.cfg_op.build_configmap_mon_endpoints_mapping(mons,
             mon_dict)
         mon_mapping = json.dumps(mon_dict)
-        self.kube_op.override_resource('configmap', 'rook-ceph-mon-endpoints',
-            'data.mapping', mon_mapping)
+        self.kube_op.override_resource_object('configmap',
+            CONFIGMAP_MON_ENDPOINTS, 'data.mapping', mon_mapping)
 
         mon_count = self.get_rook_mon_count()
         if mon_count > 1 and mon_count <= 3:

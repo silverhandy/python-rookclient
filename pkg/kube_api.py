@@ -36,7 +36,7 @@ class KubeOperator(object):
         """
         self._ns = namespace
 
-    def build_kuebctl_command(self, basic_command, resource=None, name=None, 
+    def build_kuebctl_command(self, basic_command, resource=None, name=None,
                               flags=None, with_definition=False):
         command = ['kubectl', basic_command]
         command += ['--namespace', self._ns]
@@ -84,6 +84,14 @@ class KubeOperator(object):
         #print("Get pod command: %s" %command)
         return self.execute_kubectl_command_with_output(command, timeout)
 
+    def command_find_resource(self, resource, timeout=None):
+
+        command = self.build_kuebctl_command('get', resource = resource,
+            flags = ['-o', r'jsonpath="{.items[0].metadata.name}"'])
+        #print("Get pod command: %s" %command)
+        return self.execute_kubectl_command_with_output(command, timeout)
+
+
     def command_replace(self, definition, timeout=None):
         command = self.build_kuebctl_command('replace', flags=['--cascade'],
             with_definition=True)
@@ -121,7 +129,8 @@ class KubeOperator(object):
 
         return objects
 
-    def fetch_resource(self, resource, name, key, timeout=None):
+
+    def fetch_resource_object(self, resource, name, key, timeout=None):
         objects = self.command_get(resource, name, timeout)
         if not objects:
             print("Fail to get resource %s." %name)
@@ -134,7 +143,7 @@ class KubeOperator(object):
 
         return value
 
-    def override_resource(self, resource, name, key, value, timeout=None):
+    def override_resource_object(self, resource, name, key, value, timeout=None):
         """
         Implement the function to override pararmeters in ceph-cluster helm
         chart.

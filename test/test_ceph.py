@@ -18,15 +18,16 @@
 
 import sys
 sys.path.append('../')
-import pkg.kube_api as api
+import pkg.kube_api as kube_api
 import pkg.ceph as ceph
+import pkg.ceph_api as ceph_api
 
 class CephApiTester(object):
 
     def __init__(self):
-        self.kube_op = api.KubeOperator('rook-ceph')
+        self.kube_op = kube_api.KubeOperator('rook-ceph')
         self.ceph_op = ceph.RookCephOperator('rook-ceph')
-        self.api = ceph.RookCephApi('rook-ceph')
+        self.api = ceph_api.RookCephApi('rook-ceph')
 
     def test_command_get(self):
         #objects = self.op.command_get('CephCluster', 'rook-ceph', 'rook-ceph')
@@ -57,11 +58,8 @@ class CephApiTester(object):
     def test_modify_rook_mon_count(self, count):
         self.ceph_op.modify_rook_mon_count(count)
 
-    def test_add_dedicated_ceph_mon(self):
-        self.ceph_op.add_dedicated_ceph_mon('k', '10.97.181.143:6789')
-
-    def test_remove_dedicated_ceph_mon(self):
-        self.ceph_op.remove_dedicated_ceph_mon('d')
+    def test_mon_remove(self):
+        self.api.mon_remove('e')
 
     def test_ceph_api(self):
         status = self.api.ceph_status()
@@ -72,6 +70,8 @@ class CephApiTester(object):
         print(status)
         status = self.api.osd_crush_dump()
         print(status)
+        output = self.api.osd_crush_rule_ls()
+        print(output)
 
 if __name__ == "__main__":
     tester = CephApiTester()
@@ -89,4 +89,4 @@ if __name__ == "__main__":
 
     tester.test_ceph_api()
 
-    tester.test_remove_dedicated_ceph_mon()
+    tester.test_mon_remove()

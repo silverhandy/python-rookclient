@@ -5507,15 +5507,11 @@ class ConductorManager(service.PeriodicService):
         self._ceph.osd_remove_crush_auth(istor_obj['osdid'])
 
         # Remove the OSD
-        response, body = self._ceph_osd_remove(
-            istor_obj['osdid'], body='json')
-        if not response.ok:
-            LOG.error("OSD remove failed for OSD %s: %s",
-                      "osd." + str(istor_obj['osdid']), response.reason)
-            response.raise_for_status()
+        output = self._ceph_osd_remove(istor_obj['osdid'])
 
     # @staticmethod can't be used with @retry decorator below because
     # it raises a "'staticmethod' object is not callable" exception
+    '''
     def _osd_must_be_down(result):
         response, body = result
         if not response.ok:
@@ -5528,12 +5524,15 @@ class ConductorManager(service.PeriodicService):
             return True
         else:
             return False
+    '''
 
+    '''
     @retry(retry_on_result=_osd_must_be_down,
            stop_max_attempt_number=CONF.conductor.osd_remove_retry_count,
            wait_fixed=(CONF.conductor.osd_remove_retry_interval * 1000))
-    def _ceph_osd_remove(self, *args, **kwargs):
-        return self._ceph.osd_remove(*args, **kwargs)
+    '''
+    def _ceph_osd_remove(self, osd_ids):
+        return self._ceph_api.osd_remove(osd_ids)
 
     def kill_ceph_storage_monitor(self, context):
         """Stop the ceph storage monitor.
@@ -8982,20 +8981,16 @@ class ConductorManager(service.PeriodicService):
             ceph_backend = StorageBackendConfig.get_backend(self.dbapi, constants.CINDER_BACKEND_CEPH)
             if ceph_backend and ceph_backend.state == constants.SB_STATE_CONFIGURED:
                 try:
-                    response, body = self._ceph_api.osd_crush_rule_rm("cache_tier_ruleset",
-                                                                      body='json')
-                    if response.ok:
-                        LOG.info("Successfully removed cache_tier_ruleset "
-                                 "[ceph osd crush rule rm cache_tier_ruleset]")
-                        try:
-                            response, body = self._ceph_api.osd_crush_remove("cache-tier",
-                                                                             body='json')
-                            if response.ok:
-                                LOG.info("Successfully removed cache_tier "
-                                         "[ceph osd crush remove cache-tier]")
-                        except exception.CephFailure:
-                            LOG.warn("Failed to remove bucket cache-tier from crushmap")
-                            pass
+                    output = self._ceph_api.osd_crush_rule_rm("cache_tier_ruleset")
+                    LOG.info("Successfully removed cache_tier_ruleset "
+                             "[ceph osd crush rule rm cache_tier_ruleset]")
+                    try:
+                        output = self._ceph_api.osd_crush_remove("cache-tier")
+                        LOG.info("Successfully removed cache_tier "
+                                 "[ceph osd crush remove cache-tier]")
+                    except exception.CephFailure:
+                        LOG.warn("Failed to remove bucket cache-tier from crushmap")
+                        pass
                 except exception.CephFailure:
                     LOG.warn("Failed to remove rule cache-tier from crushmap")
                     pass

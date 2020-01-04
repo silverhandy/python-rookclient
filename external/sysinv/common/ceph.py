@@ -60,37 +60,32 @@ class CephApiOperator(object):
         present = False
 
         LOG.info("ceph osd crush rule ls")
-        response, body = self._ceph_api.osd_crush_rule_ls(body='json')
-        LOG.info("CRUSH: %d :%s" % (response.status_code, body['status']))
+        output = self._ceph_api.osd_crush_rule_ls()
+        LOG.info("CRUSH: %s" % str(output))
 
         name = (tier_name + "-ruleset").replace('-', '_')
 
-        if name in body['output']:
+        if name in output:
             present = True
 
-        return (present, name, len(body['output']))
+        return (present, name, len(output))
 
     def _crush_bucket_add(self, bucket_name, bucket_type):
-        LOG.info("ceph osd crush add-bucket %s %s" % (bucket_name,
-                                                      bucket_type))
-        response, body = self._ceph_api.osd_crush_add_bucket(bucket_name,
-                                                             bucket_type,
-                                                             body='json')
-        LOG.info("CRUSH: %d :%s" % (response.status_code, body['status']))
+        LOG.info("ceph osd crush add-bucket %s %s" % (bucket_name, bucket_type))
+        output = self._ceph_api.osd_crush_add_bucket(bucket_name, bucket_type)
+        LOG.info("CRUSH: %s" % str(output))
 
     def _crush_bucket_remove(self, bucket_name):
         LOG.info("ceph osd crush remove %s" % bucket_name)
-        response, body = self._ceph_api.osd_crush_remove(bucket_name,
-                                                         body='json')
-        LOG.info("CRUSH: %d :%s" % (response.status_code, body['status']))
+        output = self._ceph_api.osd_crush_remove(bucket_name)
+        LOG.info("CRUSH: %d :%s" % str(output))
 
     def _crush_bucket_move(self, bucket_name, ancestor_type, ancestor_name):
         LOG.info("ceph osd crush move %s %s=%s" % (bucket_name, ancestor_type,
                                                    ancestor_name))
-        response, body = self._ceph_api.osd_crush_move(
-            bucket_name, "%s=%s" % (ancestor_type, ancestor_name),
-            body='json')
-        LOG.info("CRUSH: %d :%s" % (response.status_code, body['status']))
+        output = self._ceph_api.osd_crush_move(
+            bucket_name, "%s=%s" % (ancestor_type, ancestor_name))
+        LOG.info("CRUSH: %d :%s" % str(output))
 
     def _crushmap_item_create(self, items, name, ancestor_name=None,
                               ancestor_type=None, depth=0):
@@ -177,29 +172,29 @@ class CephApiOperator(object):
             raise exception.CephCrushInvalidTierUse(tier=src_name,
                                                     reason=reason)
 
-        response, body = self._ceph_api.osd_crush_tree(body='json')
-        if response.status_code == requests.codes.ok:
-            # Scan for the destination root, should not be present
-            dest_root = [r for r in body['output'] if r['name'] == dest_root_name]
-            if dest_root:
-                raise exception.CephCrushTierAlreadyExists(tier=dest_root_name)
+        output = self._ceph_api.osd_crush_tree()
+        
+        # Scan for the destination root, should not be present
+        dest_root = [r for r in output if r['name'] == dest_root_name]
+        if dest_root:
+            raise exception.CephCrushTierAlreadyExists(tier=dest_root_name)
 
-            src_root = [r for r in body['output'] if r['name'] == src_root_name]
-            if not src_root:
-                reason = ("The required source root '%s' does not exist." %
-                          src_root_name)
-                raise exception.CephCrushInvalidTierUse(tier=src_root_name,
-                                                        reason=reason)
+        src_root = [r for r in output if r['name'] == src_root_name]
+        if not src_root:
+            reason = ("The required source root '%s' does not exist." %
+                      src_root_name)
+            raise exception.CephCrushInvalidTierUse(tier=src_root_name,
+                                                    reason=reason)
 
-            # Mirror the root hierarchy
-            LOG.info("Mirroring crush root for new tier: src = %s, dest = %s" %
-                     (src_root_name, dest_root_name))
-            try:
-                self._crushmap_item_create(src_root, dest_name)
-            except exception.CephCrushMaxRecursion:
-                LOG.error("Unexpected recursion level seen while mirroring "
-                          "crushmap hierarchy. Rolling back crushmap changes")
-                self._crushmap_item_delete(src_root, dest_name, rollback=True)
+        # Mirror the root hierarchy
+        LOG.info("Mirroring crush root for new tier: src = %s, dest = %s" %
+                 (src_root_name, dest_root_name))
+        try:
+            self._crushmap_item_create(src_root, dest_name)
+        except exception.CephCrushMaxRecursion:
+            LOG.error("Unexpected recursion level seen while mirroring "
+                      "crushmap hierarchy. Rolling back crushmap changes")
+            self._crushmap_item_delete(src_root, dest_name, rollback=True)
 
     def _crushmap_root_delete(self, name):
         """Remove the crushmap root entry. """
@@ -210,22 +205,21 @@ class CephApiOperator(object):
             reason = "Cannot remove tier '%s'." % default_root_name
             raise exception.CephCrushInvalidTierUse(tier=name, reason=reason)
 
-        response, body = self._ceph_api.osd_crush_tree(body='json')
-        if response.status_code == requests.codes.ok:
-            # Scan for the destinaion root, should not be present
-            root = [r for r in body['output'] if r['name'] == root_name]
+        output = self._ceph_api.osd_crush_tree()
+        # Scan for the destinaion root, should not be present
+        root = [r for r in output if r['name'] == root_name]
 
-            if not root:
-                reason = "The crushmap root '%s' does not exist." % root_name
-                raise exception.CephCrushInvalidTierUse(tier=name,
-                                                        reason=reason)
+        if not root:
+            reason = "The crushmap root '%s' does not exist." % root_name
+            raise exception.CephCrushInvalidTierUse(tier=name,
+                                                    reason=reason)
 
-            # Delete the root hierarchy
-            try:
-                self._crushmap_item_delete(root, name)
-            except exception.CephCrushMaxRecursion:
-                LOG.debug("Unexpected recursion level seen while deleting "
-                          "crushmap hierarchy")
+        # Delete the root hierarchy
+        try:
+            self._crushmap_item_delete(root, name)
+        except exception.CephCrushMaxRecursion:
+            LOG.debug("Unexpected recursion level seen while deleting "
+                      "crushmap hierarchy")
 
     def _insert_crush_rule(self, file_contents, root_name, rule_name, rule_count,
                            replicate_by='host'):
@@ -350,9 +344,8 @@ class CephApiOperator(object):
                                                           reason=reason)
 
         LOG.info("ceph osd crush rule rm %s" % rule_name)
-        response, body = self._ceph_api.osd_crush_rule_rm(rule_name,
-                                                          body='json')
-        LOG.info("CRUSH: %d :%s" % (response.status_code, body['status']))
+        output = self._ceph_api.osd_crush_rule_rm(rule_name)
+        LOG.info("CRUSH: %s" % str(output))
 
     def crushmap_tier_delete(self, name):
         """Delete a custom storage tier to the crushmap. """
@@ -469,12 +462,10 @@ class CephApiOperator(object):
     def _crushmap_tier_rename(self, old_name, new_name):
         old_root_name = self._format_root_name(old_name)
         new_root_name = self._format_root_name(new_name)
-        response, body = self._ceph_api.osd_crush_dump(body='json')
-        if response.status_code != requests.codes.ok:
-            raise exception.CephFailure(reason=response.reason)
+        output = self._ceph_api.osd_crush_dump()
         # build map of buckets to be renamed
         rename_map = {}
-        for buck in body['output']['buckets']:
+        for buck in output['buckets']:
             name = buck['name']
             if buck['type_name'] == 'root':
                 if name == old_root_name:
@@ -484,7 +475,7 @@ class CephApiOperator(object):
                 new_suffix = '-{}'.format(new_name)
                 if name.endswith(old_suffix):
                     rename_map[name] = name[:-len(old_suffix)] + new_suffix
-        conflicts = set(b['name'] for b in body['output']['buckets']) \
+        conflicts = set(b['name'] for b in output['buckets']) \
             .intersection(set(rename_map.values()))
         if conflicts:
             raise exception.CephCrushTierRenameFailure(
@@ -493,24 +484,14 @@ class CephApiOperator(object):
                     % ', '.join(conflicts)))
         old_rule_name = self._format_rule_name(old_name)
         new_rule_name = self._format_rule_name(new_name)
-        response, body = self._ceph_api.osd_crush_rule_dump(new_rule_name)
-        if response.status_code == requests.codes.ok:
-            raise exception.CephCrushTierRenameFailure(
-                tier=old_name, reason=(
-                    "Target ruleset already exists %s" % new_rule_name))
+        output = self._ceph_api.osd_crush_rule_dump(new_rule_name)
         for _from, _to in rename_map.items():
             LOG.info("Rename bucket from '%s' to '%s'", _from, _to)
-            response, body = self._ceph_api.osd_crush_rename_bucket(_from, _to)
-            if response.status_code != requests.codes.ok:
-                raise exception.CephCrushTierRenameFailure(
-                    tier=old_name, reason=response.reason)
+            output = self._ceph_api.osd_crush_rename_bucket(_from, _to)
         LOG.info("Rename crush rule from '%s' to '%s'",
                  old_rule_name, new_rule_name)
-        response, body = self._ceph_api.osd_crush_rule_rename(
+        output = self._ceph_api.osd_crush_rule_rename(
             old_rule_name, new_rule_name)
-        if response.status_code != requests.codes.ok:
-            raise exception.CephCrushTierRenameFailure(
-                tier=old_name, reason=response.reason)
 
     def crushmap_tier_rename(self, old_name, new_name):
         with self.safe_crushmap_update():
@@ -547,9 +528,8 @@ class CephApiOperator(object):
         rc = True
 
         try:
-            response, body = self._ceph_api.status(body='json',
-                                                   timeout=timeout)
-            ceph_status = body['output']['health']['status']
+            output = self._ceph_api.status(timeout=timeout)
+            ceph_status = output['health']['status']
             if ceph_status != constants.CEPH_HEALTH_OK:
                 LOG.warn("ceph status=%s " % ceph_status)
                 rc = False
@@ -561,26 +541,19 @@ class CephApiOperator(object):
 
     def get_osd_stats(self, timeout=30):
         try:
-            resp, body = self._ceph_api.osd_stat(body='json',
-                                                 timeout=timeout)
+            output = self._ceph_api.osd_stat(timeout=timeout)
         except ReadTimeout as e:
             resp = type('Response', (),
                         dict(ok=False,
                              reason=('Ceph API osd_stat() timeout '
                                      'after {} seconds').format(timeout)))
-        if not resp.ok:
-            e = exception.CephGetOsdStatsFailure(reason=resp.reason)
-            LOG.error(e)
-            raise e
-        else:
-            return body["output"]
+        return output
 
     def _osd_quorum_names(self, timeout=10):
         quorum_names = []
         try:
-            response, body = self._ceph_api.quorum_status(body='json',
-                                                          timeout=timeout)
-            quorum_names = body['output']['quorum_names']
+            output = self._ceph_api.quorum_status(timeout=timeout)
+            quorum_names = output['quorum_names']
         except Exception as ex:
             LOG.exception(ex)
             return quorum_names
@@ -590,22 +563,18 @@ class CephApiOperator(object):
     def remove_osd_key(self, osdid):
         osdid_str = "osd." + str(osdid)
         # Remove the OSD authentication key
-        response, body = self._ceph_api.auth_del(
-            osdid_str, body='json')
-        if not response.ok:
-            LOG.error("Auth delete failed for OSD %s: %s",
-                      osdid_str, response.reason)
+        output = self._ceph_api.auth_del(osdid_str)
 
     def osd_host_lookup(self, osd_id):
-        response, body = self._ceph_api.osd_crush_tree(body='json')
-        for i in range(0, len(body['output'])):
+        output = self._ceph_api.osd_crush_tree()
+        for i in range(0, len(output)):
             # there are 2 chassis lists - cache-tier and root-tier
             # that can be seen in the output of 'ceph osd crush tree':
             # [{"id": -2,"name": "cache-tier", "type": "root",
             # "type_id": 10, "items": [...]},
             # {"id": -1,"name": "storage-tier","type": "root",
             # "type_id": 10, "items": [...]}]
-            chassis_list = body['output'][i]['items']
+            chassis_list = output[i]['items']
             for chassis in chassis_list:
                 # extract storage list/per chassis
                 storage_list = chassis['items']
@@ -661,22 +630,15 @@ class CephApiOperator(object):
         rc = False
 
         try:
-            response, body = self._ceph_api.health(detail='detail',
-                                                   body='json',
-                                                   timeout=timeout)
-            health_detail = body['output']
-            if response.status_code != requests.codes.ok:
-                response.raise_for_status()
+            output = self._ceph_api.health(detail='detail', timeout=timeout)
+            health_detail = output
         except Exception as e:
             rc = True
             LOG.warn("ceph health exception: %s " % e)
 
         try:
-            response, body = self._ceph_api.osd_tree(body='json')
-            osd_tree = body['output']
-
-            if response.status_code != requests.codes.ok:
-                response.raise_for_status()
+            output = self._ceph_api.osd_tree()
+            osd_tree = output
         except Exception as e:
             rc = True
             LOG.warn("ceph osd tree exception: %s " % e)
@@ -703,8 +665,8 @@ class CephApiOperator(object):
 
     def check_osds_down_up(self, hostname, upgrade):
         # check if osds from a storage are down/up
-        response, body = self._ceph_api.osd_tree(body='json')
-        osd_tree = body['output']['nodes']
+        output = self._ceph_api.osd_tree()
+        osd_tree = output['nodes']
         size = len(osd_tree)
         for i in range(1, size):
             if osd_tree[i]['type'] != "host":
@@ -724,8 +686,7 @@ class CephApiOperator(object):
 
     def host_crush_remove(self, hostname):
         # remove host from crushmap when system host-delete is executed
-        response, body = self._ceph_api.osd_crush_remove(
-            hostname, body='json')
+        output = self._ceph_api.osd_crush_remove(hostname)
 
     def set_crushmap(self):
         if fix_crushmap():
@@ -754,8 +715,8 @@ class CephApiOperator(object):
         # should prevent locking of a host if HEALTH_BLOCK
         host_health = None
         try:
-            response, body = self._ceph_api.pg_dump_stuck(body='json')
-            pg_detail = len(body['output'])
+            output = self._ceph_api.pg_dump_stuck()
+            pg_detail = len(output)
         except Exception as e:
             LOG.exception(e)
             return host_health
@@ -766,7 +727,7 @@ class CephApiOperator(object):
         osd_list = []
         for x in range(pg_detail):
             # extract the osd and return the storage node
-            osd = body['output'][x]['acting']
+            osd = output[x]['acting']
             # osd is a list with osd where a stuck/degraded PG
             # was replicated. If osd is empty, it means
             # PG is not replicated to any osd
@@ -867,14 +828,8 @@ class CephApiOperator(object):
 
     def list_osd_pools(self):
         """List all osd pools."""
-        resp, pools = self._ceph_api.osd_pool_ls(body='json')
-        if not resp.ok:
-            e = exception.CephPoolListFailure(
-                reason=resp.reason)
-            LOG.error(e)
-            raise e
-        else:
-            return pools['output']
+        pools = self._ceph_api.osd_pool_ls()
+        return pools
 
 
 def fix_crushmap(dbapi=None):
