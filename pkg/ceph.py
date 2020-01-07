@@ -83,20 +83,25 @@ class RookCephOperator(rook.RookOperator):
         self.kube_op = api.KubeOperator(namespace)
         self.cfg_op = CephConfigOperator()
 
-    def execute_toolbox_cli(self, cli, sure=False, format='json', timeout=None):
+    def execute_toolbox_cli(self, cli, ceph_bin=True, sure=False,
+                            format='json', timeout=None):
         pod = self.kube_op.command_find_pod(POD_TOOLBOX)
         if not pod:
             print("Error when get pod rook-ceph-tools.")
             return None
 
-        full_cli = 'ceph '
-        full_cli += cli
+        full_cli = []
+        if ceph_bin:
+            full_cli.append('ceph')
+        full_cli.extend(cli)
         if sure:
-            full_cli += ' --yes-i-really-really-mean-it'
+            full_cli.append('--yes-i-really-really-mean-it')
         if format == 'json':
-            full_cli += ' --format json-pretty'
+            full_cli.extend(['--format', 'json-pretty'])
 
-        output = self.kube_op.command_execute_cli(pod, full_cli, timeout)
+        full_cli_str = " ".join(full_cli)
+        print("FULL CLI STRING ------> %s" % full_cli_str)
+        output = self.kube_op.command_execute_cli(pod, full_cli_str, timeout)
         return output
 
     def get_rook_mon_count(self):

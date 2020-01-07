@@ -17,6 +17,7 @@
 #
 
 import sys
+import time
 sys.path.append('../')
 import pkg.kube_api as kube_api
 import pkg.ceph as ceph
@@ -72,6 +73,29 @@ class CephApiTester(object):
         print(status)
         output = self.api.osd_crush_rule_ls()
         print(output)
+        output = self.api.osd_pool_create('aa', 128, 128)
+        print(output)
+
+    def test_crushmap_api(self):
+        crushmap_txt_file = "crushmap.txt"
+        crushmap_bin_file = "crushmap.bin"
+        output = self.api.osd_crushmap_get(crushmap_bin_file)
+        print(output)
+        time.sleep(2)
+
+        output = self.api.osd_crushmap_decompile(crushmap_bin_file,
+            crushmap_txt_file)
+        print(output)
+        time.sleep(2)
+
+        output = self.api.osd_crushmap_compile(crushmap_txt_file,
+            crushmap_bin_file)
+        print(output)
+        time.sleep(2)
+
+        output = self.api.osd_crushmap_set(crushmap_bin_file)
+        print(output)
+
 
 if __name__ == "__main__":
     tester = CephApiTester()
@@ -88,5 +112,5 @@ if __name__ == "__main__":
     #tester.test_command_execute_cli()
 
     tester.test_ceph_api()
-
-    tester.test_mon_remove()
+    tester.test_crushmap_api()
+    #tester.test_mon_remove()

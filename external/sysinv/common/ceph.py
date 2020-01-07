@@ -12,7 +12,7 @@
 
 from __future__ import absolute_import
 
-from eventlet.green import subprocess
+#from eventlet.green import subprocess
 import os
 import pecan
 import requests
@@ -270,21 +270,16 @@ class CephApiOperator(object):
         # NOTE: The Ceph API only supports simple single step rule creation.
         # Because of this we need to update the crushmap the hard way.
 
-        tmp_crushmap_bin_file = os.path.join(constants.SYSINV_CONFIG_PATH,
-                                             "crushmap_rule_update.bin")
-        tmp_crushmap_txt_file = os.path.join(constants.SYSINV_CONFIG_PATH,
-                                             "crushmap_rule_update.txt")
+        tmp_crushmap_bin_file = "/etc/sysinv/crushmap_rule_update.bin"
+        tmp_crushmap_txt_file = "/etc/sysinv/crushmap_rule_update.txt"
 
         # Extract the crushmap
-        cmd = ["ceph", "osd", "getcrushmap", "-o", tmp_crushmap_bin_file]
-        stdout, __ = cutils.execute(*cmd, run_as_root=False)
+        self.get_osd_crushmap(tmp_crushmap_bin_file)
 
         if os.path.exists(tmp_crushmap_bin_file):
             # Decompile the crushmap
-            cmd = ["crushtool",
-                   "-d", tmp_crushmap_bin_file,
-                   "-o", tmp_crushmap_txt_file]
-            stdout, __ = cutils.execute(*cmd, run_as_root=False)
+            self.decompile_osd_crushmap(tmp_crushmap_bin_file,
+                                        tmp_crushmap_txt_file)
 
             if os.path.exists(tmp_crushmap_txt_file):
                 # Add the custom rule
@@ -299,17 +294,13 @@ class CephApiOperator(object):
                     fp.write(contents)
 
                 # Compile the crush map
-                cmd = ["crushtool",
-                       "-c", tmp_crushmap_txt_file,
-                       "-o", tmp_crushmap_bin_file]
-                stdout, __ = cutils.execute(*cmd, run_as_root=False)
+                self.compile_osd_crushmap(tmp_crushmap_txt_file,
+                                          tmp_crushmap_bin_file)
 
                 # Load the new crushmap
                 LOG.info("Loading updated crushmap with elements for "
                          "crushmap root: %s" % root_name)
-                cmd = ["ceph", "osd", "setcrushmap",
-                       "-i", tmp_crushmap_bin_file]
-                stdout, __ = cutils.execute(*cmd, run_as_root=False)
+                self.set_osd_crushmap(tmp_crushmap_bin_file)
 
         # cleanup
         if os.path.exists(tmp_crushmap_txt_file):
@@ -497,6 +488,7 @@ class CephApiOperator(object):
         with self.safe_crushmap_update():
             self._crushmap_tier_rename(old_name, new_name)
 
+    '''
     @contextmanager
     def safe_crushmap_update(self):
         with open(os.devnull, 'w') as fnull, tempfile.TemporaryFile() as backup:
@@ -519,6 +511,7 @@ class CephApiOperator(object):
                     stdin=backup, stdout=fnull, stderr=fnull,
                     shell=True)
                 raise
+    '''
 
     def ceph_status_ok(self, timeout=10):
         """
@@ -831,6 +824,18 @@ class CephApiOperator(object):
         pools = self._ceph_api.osd_pool_ls()
         return pools
 
+    def get_osd_crushmap(self, crushmap_bin_file):
+        self._ceph_api.osd_crushmap_get(crushmap_bin_file)
+
+    def set_osd_crushmap(self, crushmap_bin_file):
+        self._ceph_api.osd_crushmap_set(crushmap_bin_file)
+
+    def compile_osd_crushmap(self, crushmap_txt, crushmap_bin):
+        self._ceph_api.osd_crushmap_compile(crushmap_txt, crushmap_bin)
+
+    def decompile_osd_crushmap(self, crushmap_bin, crushmap_txt):
+        self._ceph_api.osd_crushmap_decompile(crushmap_bin, crushmap_txt)
+
 
 def fix_crushmap(dbapi=None):
     """ Set Ceph's CRUSH Map based on storage model """
@@ -901,19 +906,12 @@ def fix_crushmap(dbapi=None):
                 LOG.info("Updating crushmap with: %s" % crushmap_txt)
 
                 # Compile crushmap
-                subprocess.check_output("crushtool -c %s "
-                                        "-o %s" % (crushmap_txt, crushmap_bin),
-                                    stderr=subprocess.STDOUT, shell=True)
+                _operator.compile_osd_crushmap(crushmap_txt, crushmap_bin)
             # Set crushmap
-            subprocess.check_output("ceph osd setcrushmap -i %s" % crushmap_bin,
-                                    stderr=subprocess.STDOUT, shell=True)
+            _operator.set_osd_crushmap(crushmap_bin)
 
             if os.path.exists(backup):
                 os.remove(backup)
-        except (IOError, subprocess.CalledProcessError) as e:
-            # May not be critical, depends on where this is called.
-            reason = "Error: %s Output: %s" % (str(e), e.output)
-            raise exception.CephCrushMapNotApplied(reason=reason)
 
         _create_crushmap_flag_file()
 
