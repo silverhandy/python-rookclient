@@ -15,18 +15,19 @@
 #   Authors: Tingjie Chen <tingjie.chen@intel.com>
 #
 
+import six
 import enum
 import time
 import sys
 import shutil
 import json
-sys.path.append('../')
-import pkg.ceph as ceph
+import ceph as ceph
 
 
 class RookCephApi(object):
     def __init__(self, namespace):
         self.ceph_op = ceph.RookCephOperator(namespace)
+        self.is_ready = False
 
     '''
     Get Interfaces, all the get interface can be implemented by toolbox CLI.
@@ -92,10 +93,11 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
-    def osd_crush_rule_dump(self, rule_name, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            ['osd', 'crush', 'rule', 'dump', rule_name],
-            timeout=timeout)
+    def osd_crush_rule_dump(self, rule_name=None, timeout=None):
+        cli = ['osd', 'crush', 'rule', 'dump']
+        if rule_name:
+            cli.append(rule_name)
+        output = self.ceph_op.execute_toolbox_cli(cli, timeout=timeout)
         return output
 
     def get_tiers_size(self, timeout=None):
@@ -164,6 +166,16 @@ class RookCephApi(object):
             timeout=timeout)
         return output
 
+    def _osd_crush_rule_by_ruleset(self, ruleset, timeout=None):
+        output = self.osd_crush_rule_dump(timeout=timeout)
+        name = None
+
+        for rule in output:
+            if rule.get('ruleset') == ruleset:
+                name = rule.get('rule_name')
+        output = dict(rule=name)
+        return output
+
     '''
     Set Interfaces
     '''
@@ -172,11 +184,26 @@ class RookCephApi(object):
     def mon_remove(self, mon_id, timeout=None):
         return self.ceph_op.remove_dedicated_ceph_mon(mon_id, timeout)
 
+    def _sanitize_osdid_to_int(self, _id):
+        if isinstance(_id, six.string_types):
+            prefix = 'osd.'
+            if _id.startswith(prefix):
+                _id = _id[len(prefix):]
+            try:
+                _id = int(_id)
+            except ValueError:
+                raise ApiError
+        elif not isinstance(_id, six.integer_types):
+            raise ApiError
+        return _id
     # ?
-    def osd_create(self, timeout=None):
-        output = self.ceph_op.execute_toolbox_cli(
-            ['osd', 'create'],
-            timeout=timeout)
+    def osd_create(self, uuid=None, params=None, timeout=None):
+        cli = ['osd', 'create']
+        if uuid:
+            cli.append(str(uuid))
+        if params:
+            cli.append(self._sanitize_osdid_to_int(params['id']))
+        output = self.ceph_op.execute_toolbox_cli(cli, timeout=timeout)
         return output
 
     # Toolbox CLI ?
@@ -204,6 +231,12 @@ class RookCephApi(object):
     def osd_pool_create(self, pool, pg_num, pgp_num=None, pool_type=None,
                         erasure_code_profile=None, ruleset=None,
                         expected_num_objects=None, timeout=None):
+        crush_rule = self._osd_crush_rule_by_ruleset(ruleset)
+        if crush_rule is None:
+            print("Create OSD pool failed with empty rule.")
+            return None
+
+        rule = crush_rule['rule']
         cli = ['osd', 'pool', 'create', pool, str(pg_num)]
         if pgp_num is not None:
             cli.append(str(pgp_num))
@@ -211,8 +244,8 @@ class RookCephApi(object):
             cli.append(pool_type)
         if erasure_code_profile is not None:
             cli.append(erasure_code_profile)
-        if ruleset is not None:
-            cli.append(ruleset)
+        if rule is not None:
+            cli.append(rule)
         if expected_num_objects is not None:
             cli.append(str(expected_num_objects))
         output = self.ceph_op.execute_toolbox_cli(cli, timeout=timeout)
@@ -225,11 +258,72 @@ class RookCephApi(object):
             sure=True, timeout=timeout)
         return output
 
+    OSD_POOL_SET_VAR_VALUES = \
+        ['size', 'min_size', 'pg_num', 'pgp_num',
+         'crush_rule', 'hashpspool', 'nodelete',
+         'nopgchange', 'nosizechange',
+         'write_fadvise_dontneed', 'noscrub',
+         'nodeep-scrub', 'hit_set_type',
+         'hit_set_period', 'hit_set_count',
+         'hit_set_fpp', 'use_gmt_hitset',
+         'target_max_bytes', 'target_max_objects',
+         'cache_target_dirty_ratio',
+         'cache_target_dirty_high_ratio',
+         'cache_target_full_ratio',
+         'cache_min_flush_age', 'cache_min_evict_age',
+         'auid', 'min_read_recency_for_promote',
+         'min_write_recency_for_promote', 'fast_read',
+         'hit_set_grade_decay_rate',
+         'hit_set_search_last_n', 'scrub_min_interval',
+         'scrub_max_interval', 'deep_scrub_interval',
+         'recovery_priority', 'recovery_op_priority',
+         'scrub_priority', 'compression_mode',
+         'compression_algorithm',
+         'compression_required_ratio',
+         'compression_max_blob_size',
+         'compression_min_blob_size', 'csum_type',
+         'csum_min_block', 'csum_max_block',
+         'allow_ec_overwrites']
+
+    def osd_pool_set(self, pool, var, val, force=None, timeout=None):
+        supported = RookCephApi.OSD_POOL_SET_VAR_VALUES
+        if var not in supported:
+            print("Invalid Choice in OSD pool setting.")
+            return None
+
+        if force is None:
+            sure = False
+        else:
+            sure = True
+
+        output = self.ceph_op.execute_toolbox_cli(
+            ['osd', 'pool', 'set', pool, var, str(val)], sure=sure,
+            timeout=timeout)
+        
+
+    def osd_pool_set_param(self, pool, var, val, force=None, timeout=None):
+        if var == 'crush_ruleset':
+            var = 'crush_rule'
+            crush_rule = self._osd_crush_rule_by_ruleset(val, timeout=timeout)
+            if crush_rule is None:
+                return None
+            val = crush_rule['rule']
+        return self.osd_pool_set(pool, var, val, force=force,
+            timeout=timeout)
+
+
     # Toolbox CLI
     def osd_pool_set_quota(self, pool, field, val, timeout=None):
         output = self.ceph_op.execute_toolbox_cli(
             ['osd', 'pool', 'set-quota', pool, field, val],
             timeout=timeout)
+        return output
+
+    def auth_get_or_create(self, entity, caps=None, timeout=None):
+        cli = ['auth', 'get-or-create', entity]
+        if caps:
+            cli.append(caps)
+        output = self.ceph_op.execute_toolbox_cli(cli, timeout=timeout)
         return output
 
     # Toolbox CLI

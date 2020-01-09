@@ -20,7 +20,7 @@ import shutil
 import tempfile
 
 #from cephclient import wrapper as ceph
-from rookclient import ceph as rook_ceph
+from rookclient import ceph_api as rook_ceph
 from requests.exceptions import ReadTimeout
 from contextlib import contextmanager
 
@@ -60,32 +60,42 @@ class CephApiOperator(object):
         present = False
 
         LOG.info("ceph osd crush rule ls")
-        output = self._ceph_api.osd_crush_rule_ls()
-        LOG.info("CRUSH: %s" % str(output))
+        try:
+            output = self._ceph_api.osd_crush_rule_ls()
+        except Exception as e:
+            LOG.error("Exception in ls crush rule: {}".format(e))
+            return (False, '', 0)
 
         name = (tier_name + "-ruleset").replace('-', '_')
-
         if name in output:
             present = True
 
         return (present, name, len(output))
 
     def _crush_bucket_add(self, bucket_name, bucket_type):
+        try:
+            output = self._ceph_api.osd_crush_add_bucket(bucket_name, bucket_type)
+        except Exception as e:
+            LOG.error("Exception in adding crush bucket: {}".format(e))
+
         LOG.info("ceph osd crush add-bucket %s %s" % (bucket_name, bucket_type))
-        output = self._ceph_api.osd_crush_add_bucket(bucket_name, bucket_type)
-        LOG.info("CRUSH: %s" % str(output))
 
     def _crush_bucket_remove(self, bucket_name):
+        try:
+            output = self._ceph_api.osd_crush_remove(bucket_name)
+        except Exception as e:
+            LOG.error("Exception in removing crush bucket: {}".format(e))
+
         LOG.info("ceph osd crush remove %s" % bucket_name)
-        output = self._ceph_api.osd_crush_remove(bucket_name)
-        LOG.info("CRUSH: %d :%s" % str(output))
 
     def _crush_bucket_move(self, bucket_name, ancestor_type, ancestor_name):
+        try:
+            output = self._ceph_api.osd_crush_move(
+                bucket_name, "%s=%s" % (ancestor_type, ancestor_name))
+        except Exception as e:
+            LOG.error("Exception in moving crush bucket: {}".format(e))
         LOG.info("ceph osd crush move %s %s=%s" % (bucket_name, ancestor_type,
                                                    ancestor_name))
-        output = self._ceph_api.osd_crush_move(
-            bucket_name, "%s=%s" % (ancestor_type, ancestor_name))
-        LOG.info("CRUSH: %d :%s" % str(output))
 
     def _crushmap_item_create(self, items, name, ancestor_name=None,
                               ancestor_type=None, depth=0):
@@ -172,7 +182,10 @@ class CephApiOperator(object):
             raise exception.CephCrushInvalidTierUse(tier=src_name,
                                                     reason=reason)
 
-        output = self._ceph_api.osd_crush_tree()
+        try:
+            output = self._ceph_api.osd_crush_tree()
+        except Exception as e:
+            LOG.error("Exception in getting osd tree: {}".format(e))
         
         # Scan for the destination root, should not be present
         dest_root = [r for r in output if r['name'] == dest_root_name]
@@ -205,7 +218,10 @@ class CephApiOperator(object):
             reason = "Cannot remove tier '%s'." % default_root_name
             raise exception.CephCrushInvalidTierUse(tier=name, reason=reason)
 
-        output = self._ceph_api.osd_crush_tree()
+        try:
+            output = self._ceph_api.osd_crush_tree()
+        except Exception as e:
+            LOG.error("Exception in getting osd tree: {}".format(e))
         # Scan for the destinaion root, should not be present
         root = [r for r in output if r['name'] == root_name]
 
@@ -334,9 +350,11 @@ class CephApiOperator(object):
             raise exception.CephCrushInvalidRuleOperation(rule=rule_name,
                                                           reason=reason)
 
+        try:
+            output = self._ceph_api.osd_crush_rule_rm(rule_name)
+        except Exception as e:
+            LOG.error("Exception in removing crush rule: {}".format(e))
         LOG.info("ceph osd crush rule rm %s" % rule_name)
-        output = self._ceph_api.osd_crush_rule_rm(rule_name)
-        LOG.info("CRUSH: %s" % str(output))
 
     def crushmap_tier_delete(self, name):
         """Delete a custom storage tier to the crushmap. """
@@ -453,7 +471,10 @@ class CephApiOperator(object):
     def _crushmap_tier_rename(self, old_name, new_name):
         old_root_name = self._format_root_name(old_name)
         new_root_name = self._format_root_name(new_name)
-        output = self._ceph_api.osd_crush_dump()
+        try:
+            output = self._ceph_api.osd_crush_dump()
+        except Exception as e:
+            LOG.error("Exception in dump osd crush: {}".format(e))
         # build map of buckets to be renamed
         rename_map = {}
         for buck in output['buckets']:
@@ -475,14 +496,23 @@ class CephApiOperator(object):
                     % ', '.join(conflicts)))
         old_rule_name = self._format_rule_name(old_name)
         new_rule_name = self._format_rule_name(new_name)
-        output = self._ceph_api.osd_crush_rule_dump(new_rule_name)
+        try:
+            output = self._ceph_api.osd_crush_rule_dump(new_rule_name)
+        except Exception as e:
+            LOG.error("Exception in dump osd crush rule: {}".format(e))
         for _from, _to in rename_map.items():
+            try:
+                output = self._ceph_api.osd_crush_rename_bucket(_from, _to)
+            except Exception as e:
+                LOG.error("Exception in dump osd crush: {}".format(e))
             LOG.info("Rename bucket from '%s' to '%s'", _from, _to)
-            output = self._ceph_api.osd_crush_rename_bucket(_from, _to)
+        try:
+            output = self._ceph_api.osd_crush_rule_rename(
+                old_rule_name, new_rule_name)
+        except Exception as e:
+            LOG.error("Exception in rename osd crush rule: {}".format(e))
         LOG.info("Rename crush rule from '%s' to '%s'",
                  old_rule_name, new_rule_name)
-        output = self._ceph_api.osd_crush_rule_rename(
-            old_rule_name, new_rule_name)
 
     def crushmap_tier_rename(self, old_name, new_name):
         with self.safe_crushmap_update():
@@ -511,7 +541,7 @@ class CephApiOperator(object):
                     stdin=backup, stdout=fnull, stderr=fnull,
                     shell=True)
                 raise
-    '''
+        '''
 
     def ceph_status_ok(self, timeout=10):
         """
@@ -535,31 +565,33 @@ class CephApiOperator(object):
     def get_osd_stats(self, timeout=30):
         try:
             output = self._ceph_api.osd_stat(timeout=timeout)
-        except ReadTimeout as e:
-            resp = type('Response', (),
-                        dict(ok=False,
-                             reason=('Ceph API osd_stat() timeout '
-                                     'after {} seconds').format(timeout)))
+        except Exception as e:
+            LOG.error("Exception in getting osd stats: {}".format(e))
         return output
 
     def _osd_quorum_names(self, timeout=10):
         quorum_names = []
         try:
             output = self._ceph_api.quorum_status(timeout=timeout)
-            quorum_names = output['quorum_names']
-        except Exception as ex:
-            LOG.exception(ex)
-            return quorum_names
-
+        except Exception as e:
+            LOG.error("Exception in quorum status: {}".format(e))
+    
+        quorum_names = output['quorum_names']
         return quorum_names
 
     def remove_osd_key(self, osdid):
         osdid_str = "osd." + str(osdid)
         # Remove the OSD authentication key
-        output = self._ceph_api.auth_del(osdid_str)
+        try:
+            output = self._ceph_api.auth_del(osdid_str)
+        except Exception as e:
+            LOG.error("Exception in deleting auth: {}".format(e))
 
     def osd_host_lookup(self, osd_id):
-        output = self._ceph_api.osd_crush_tree()
+        try:
+            output = self._ceph_api.osd_crush_tree()
+        except Exception as e:
+            LOG.error("Exception in tree osd crush: {}".format(e))
         for i in range(0, len(output)):
             # there are 2 chassis lists - cache-tier and root-tier
             # that can be seen in the output of 'ceph osd crush tree':
@@ -624,17 +656,17 @@ class CephApiOperator(object):
 
         try:
             output = self._ceph_api.health(detail='detail', timeout=timeout)
-            health_detail = output
         except Exception as e:
             rc = True
             LOG.warn("ceph health exception: %s " % e)
+        health_detail = output
 
         try:
             output = self._ceph_api.osd_tree()
-            osd_tree = output
         except Exception as e:
             rc = True
             LOG.warn("ceph osd tree exception: %s " % e)
+        osd_tree = output
 
         try:
             this_host_osds = self._identify_host_osds(osd_tree, target_host)
@@ -658,7 +690,10 @@ class CephApiOperator(object):
 
     def check_osds_down_up(self, hostname, upgrade):
         # check if osds from a storage are down/up
-        output = self._ceph_api.osd_tree()
+        try:
+            output = self._ceph_api.osd_tree()
+        except Exception as e:
+            LOG.error("Exception in tree osd: {}".format(e))
         osd_tree = output['nodes']
         size = len(osd_tree)
         for i in range(1, size):
@@ -679,7 +714,10 @@ class CephApiOperator(object):
 
     def host_crush_remove(self, hostname):
         # remove host from crushmap when system host-delete is executed
-        output = self._ceph_api.osd_crush_remove(hostname)
+        try:
+            output = self._ceph_api.osd_crush_remove(hostname)
+        except Exception as e:
+            LOG.error("Exception in removing osd crush: {}".format(e))
 
     def set_crushmap(self):
         if fix_crushmap():
@@ -709,11 +747,10 @@ class CephApiOperator(object):
         host_health = None
         try:
             output = self._ceph_api.pg_dump_stuck()
-            pg_detail = len(output)
         except Exception as e:
             LOG.exception(e)
             return host_health
-
+        pg_detail = len(output)
         # osd_list is a list where I add
         # each osd from pg_detail whose hostname
         # is not equal with hostnamge given as parameter
@@ -821,20 +858,35 @@ class CephApiOperator(object):
 
     def list_osd_pools(self):
         """List all osd pools."""
-        pools = self._ceph_api.osd_pool_ls()
+        try:
+            pools = self._ceph_api.osd_pool_ls()
+        except Exception as e:
+            LOG.error("Exception in ls osd pool: {}".format(e))
         return pools
 
     def get_osd_crushmap(self, crushmap_bin_file):
-        self._ceph_api.osd_crushmap_get(crushmap_bin_file)
+        try:
+            self._ceph_api.osd_crushmap_get(crushmap_bin_file)
+        except Exception as e:
+            LOG.error("Exception in get osd crushmap: {}".format(e))
 
     def set_osd_crushmap(self, crushmap_bin_file):
-        self._ceph_api.osd_crushmap_set(crushmap_bin_file)
+        try:
+            self._ceph_api.osd_crushmap_set(crushmap_bin_file)
+        except Exception as e:
+            LOG.error("Exception in set osd crushmap: {}".format(e))
 
     def compile_osd_crushmap(self, crushmap_txt, crushmap_bin):
-        self._ceph_api.osd_crushmap_compile(crushmap_txt, crushmap_bin)
+        try:
+            self._ceph_api.osd_crushmap_compile(crushmap_txt, crushmap_bin)
+        except Exception as e:
+            LOG.error("Exception in compile crushmap: {}".format(e))
 
     def decompile_osd_crushmap(self, crushmap_bin, crushmap_txt):
-        self._ceph_api.osd_crushmap_decompile(crushmap_bin, crushmap_txt)
+        try:
+            self._ceph_api.osd_crushmap_decompile(crushmap_bin, crushmap_txt)
+        except Exception as e:
+            LOG.error("Exception in decompile crushmap: {}".format(e))
 
 
 def fix_crushmap(dbapi=None):
@@ -870,48 +922,47 @@ def fix_crushmap(dbapi=None):
             _create_crushmap_flag_file()
             return False
 
-        try:
-            # For AIO system, crushmap should alreadby be loaded through
-            # puppet. If for any reason it is not, as a precaution we set
-            # the crushmap here.
+        # For AIO system, crushmap should alreadby be loaded through
+        # puppet. If for any reason it is not, as a precaution we set
+        # the crushmap here.
 
-            # Check if a backup crushmap exists. If it does, that means
-            # it is during restore. We need to restore the backup crushmap
-            # instead of generating it. For non-AIO system, it is stored in
-            # /opt/platform/sysinv which is a drbd fs. For AIO systems because
-            # when unlocking controller-0 for the first time, the crushmap is
-            # set thru ceph puppet when /opt/platform is not mounted yet, we
-            # store the crushmap in /etc/sysinv.
+        # Check if a backup crushmap exists. If it does, that means
+        # it is during restore. We need to restore the backup crushmap
+        # instead of generating it. For non-AIO system, it is stored in
+        # /opt/platform/sysinv which is a drbd fs. For AIO systems because
+        # when unlocking controller-0 for the first time, the crushmap is
+        # set thru ceph puppet when /opt/platform is not mounted yet, we
+        # store the crushmap in /etc/sysinv.
 
-            if cutils.is_aio_system(dbapi):
-                backup = os.path.join(constants.CEPH_CRUSH_MAP_BACKUP_DIR_FOR_AIO,
-                                      constants.CEPH_CRUSH_MAP_BACKUP)
+        if cutils.is_aio_system(dbapi):
+            backup = os.path.join(constants.CEPH_CRUSH_MAP_BACKUP_DIR_FOR_AIO,
+                                  constants.CEPH_CRUSH_MAP_BACKUP)
+        else:
+            backup = os.path.join(constants.SYSINV_CONFIG_PATH,
+                                  constants.CEPH_CRUSH_MAP_BACKUP)
+        crushmap_bin = "/etc/sysinv/crushmap.bin"
+        if os.path.exists(backup):
+            shutil.copyfile(backup, crushmap_bin)
+        else:
+            stor_model = get_ceph_storage_model(dbapi)
+            if stor_model == constants.CEPH_AIO_SX_MODEL:
+                crushmap_txt = "/etc/sysinv/crushmap-aio-sx.txt"
+            elif stor_model == constants.CEPH_CONTROLLER_MODEL:
+                crushmap_txt = "/etc/sysinv/crushmap-controller-model.txt"
+            elif stor_model == constants.CEPH_STORAGE_MODEL:
+                crushmap_txt = "/etc/sysinv/crushmap-storage-model.txt"
             else:
-                backup = os.path.join(constants.SYSINV_CONFIG_PATH,
-                                      constants.CEPH_CRUSH_MAP_BACKUP)
-            crushmap_bin = "/etc/sysinv/crushmap.bin"
-            if os.path.exists(backup):
-                shutil.copyfile(backup, crushmap_bin)
-            else:
-                stor_model = get_ceph_storage_model(dbapi)
-                if stor_model == constants.CEPH_AIO_SX_MODEL:
-                    crushmap_txt = "/etc/sysinv/crushmap-aio-sx.txt"
-                elif stor_model == constants.CEPH_CONTROLLER_MODEL:
-                    crushmap_txt = "/etc/sysinv/crushmap-controller-model.txt"
-                elif stor_model == constants.CEPH_STORAGE_MODEL:
-                    crushmap_txt = "/etc/sysinv/crushmap-storage-model.txt"
-                else:
-                    reason = "Error: Undefined ceph storage model %s" % stor_model
-                    raise exception.CephCrushMapNotApplied(reason=reason)
-                LOG.info("Updating crushmap with: %s" % crushmap_txt)
+                reason = "Error: Undefined ceph storage model %s" % stor_model
+                raise exception.CephCrushMapNotApplied(reason=reason)
+            LOG.info("Updating crushmap with: %s" % crushmap_txt)
 
-                # Compile crushmap
-                _operator.compile_osd_crushmap(crushmap_txt, crushmap_bin)
-            # Set crushmap
-            _operator.set_osd_crushmap(crushmap_bin)
+            # Compile crushmap
+            _operator.compile_osd_crushmap(crushmap_txt, crushmap_bin)
+        # Set crushmap
+        _operator.set_osd_crushmap(crushmap_bin)
 
-            if os.path.exists(backup):
-                os.remove(backup)
+        if os.path.exists(backup):
+            os.remove(backup)
 
         _create_crushmap_flag_file()
 

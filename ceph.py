@@ -20,9 +20,8 @@ import time
 import sys
 import shutil
 import json
-sys.path.append('../')
-import pkg.kube_api as api
-import pkg.rook as rook
+import kube_api as api
+import rook as rook
 
 CRD_CEPH_CLUSTER = "CephCluster"
 

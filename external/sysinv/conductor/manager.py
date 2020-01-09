@@ -92,7 +92,7 @@ from sysinv.common import utils as cutils
 from sysinv.common.retrying import retry
 from sysinv.common.storage_backend_conf import StorageBackendConfig
 #from cephclient import wrapper as ceph
-from rookclient import ceph as rook_ceph
+from rookclient import ceph_api as rook_ceph
 from sysinv.conductor import ceph as iceph
 from sysinv.conductor import kube_app
 from sysinv.conductor import openstack

@@ -19,9 +19,9 @@
 import sys
 import time
 sys.path.append('../')
-import pkg.kube_api as kube_api
-import pkg.ceph as ceph
-import pkg.ceph_api as ceph_api
+import kube_api as kube_api
+import ceph as ceph
+import ceph_api as ceph_api
 
 class CephApiTester(object):
 
